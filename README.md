@@ -20,26 +20,77 @@ original briefs and guides are still in place (`track-2/README.md`,
 
 ## Running it
 
-```bash
-cd track-2
-# 1. get the data -- see data/README.md, steps 1-4
-curl -O https://mantisgrid-hackathon.s3.us-east-1.amazonaws.com/track-2-raw.zip
-unzip track-2-raw.zip -d data/raw
-make prep && make generate && make check-data     # prints "Your data matches."
+> **⚠️ The dashboard takes about 90 seconds to appear after `docker compose up`.**
+> It is not hung. On startup it rebuilds all its numbers from `data/` and runs 13
+> scheduler simulations over all 74,838 jobs. Wait for this line in the log, then
+> open the page:
+>
+> ```
+> dashboard-1  | dashboard on http://0.0.0.0:3000
+> ```
 
-# 2. bring it up, from the repository root
-cd .. && docker compose up                                  # API on :8000, dashboard on :3000
+**Step 1 — clone**
+
+```bash
+git clone https://github.com/c-awad/hackathon-2026.git
+cd hackathon-2026
 ```
 
-The dashboard builds its data on startup by running the analysis over
-`data/prepped/`, including 13 runs of the scheduler simulation (about 90 seconds on a laptop, so the
-first start is slow; set `DASH_SIM=0` to skip it). It serves `:3000` and proxies `/api/*` to the API service,
-because the API sends no CORS headers and the price control is a real API call.
+**Step 2 — generate the data** (about a minute; the licence forbids committing it).
+These are the organisers' own steps from `track-2/data/README.md`, unchanged:
 
 ```bash
-make validate URL=http://localhost:3000                     # from track-2/; checks ../claims.json
-make mcp-demo                                                # drive the MCP server
-python3 analysis/case2_recoverable.py                        # any single case
+cd track-2
+curl -O https://mantisgrid-hackathon.s3.us-east-1.amazonaws.com/track-2-raw.zip
+unzip track-2-raw.zip -d data/raw
+make prep          # raw CSVs  -> data/prepped/
+make generate      # prepped   -> data/synthetic/
+make check-data    # should end with: "Your data matches."
+cd ..
+```
+
+If you already hold the five generated files, put them in `./data/` at the repository
+root instead. It is a symlink to `track-2/data/`, so both routes land in the same place.
+
+**Step 3 — start everything, with one command, from the repository root**
+
+```bash
+docker compose up
+```
+
+**Step 4 — wait about 90 seconds, then open http://localhost:3000**
+
+| What | Where |
+|---|---|
+| The dashboard (five tabs) | http://localhost:3000 |
+| The same data as one long page | http://localhost:3000/classic/ |
+| The MantisGrid API and its interactive spec | http://localhost:8000/docs |
+
+**What you will see in the terminal while you wait.** The API prints a `GET /health`
+line every 5 seconds forever; that is Docker's health check and is harmless. The
+dashboard prints `reading tables`, then `simulating the scheduler...`, then one line
+per simulation, and finally `dashboard on http://0.0.0.0:3000`. To watch only the
+dashboard: `docker compose logs -f dashboard`.
+
+**In a hurry?** `DASH_SIM=0 docker compose up` skips the simulations and starts in a
+few seconds. Tab 4's quota dial is then empty; everything else works.
+
+**If something goes wrong**
+
+- *The dashboard container exits with a file-not-found error:* the data is missing.
+  Do step 2, then `docker compose up` again.
+- *The page shows old numbers or a mix of old and new:* hard-refresh the browser.
+  The server sends `no-store`, so this should not happen after the first load.
+- *Port 3000 or 8000 is already in use:* stop whatever holds it, or
+  `docker compose down` a previous run first.
+
+**Optional checks**
+
+```bash
+cd track-2
+make validate URL=http://localhost:3000     # validates ../claims.json and pings the dashboard
+make mcp-demo                               # drives the MCP server (needs uv); writes a transcript
+python3 analysis/case2_recoverable.py       # reproduce any single case
 ```
 
 ## Who built what
