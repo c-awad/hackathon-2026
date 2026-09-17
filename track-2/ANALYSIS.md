@@ -16,6 +16,7 @@ prepped data (`python3 analysis/<script>.py`).
 |---|---|---|
 | 1 | Where the money goes | done (corrected in case 2) |
 | 2 | Recoverable spend, and whether CANCELLED is waste | done |
+| 2b | Which GPU jobs could run on CPU instead | done |
 | 3 | Card imbalance | next |
 | 4 | The shared-storage incident | |
 | 5 | Hardware-attributable failures | |
@@ -246,3 +247,115 @@ would hit real work.
 
 > Over these four months, $360K of the $1.49M was recoverable (range $200K–$490K),
 > about 24%. $200K of that is near-certain: GPUs that sat at zero for days.
+
+---
+
+## Case 2b — Which GPU jobs could run on CPU instead
+
+Script: `analysis/case2b_cpu_offload.py`
+
+**Question.** Do we know what each job needed, and can we tell which ones don't need a
+GPU and could move to CPU nodes?
+
+### What the data can and can't tell us
+
+**It has the request:** `cpus_req`, `mem_req_mb` / `mem_req_total_mb`, `gres_req`
+(`gpu:volta:N`), `timelimit`, `partition`, `constraints`, `job_type`.
+
+**It doesn't have the program.** There is no command line, application or framework
+name. So "needs a GPU" can't be read off the request, because every job here asked
+for one. It has to be inferred from what the GPU did:
+
+- `sm_util_max`, the peak compute utilization,
+- `max_gpu_mem_used`, GPU memory ever allocated,
+- `watts_avg`, where an idle V100 draws about 25 W.
+
+### Tiers
+
+| Tier | Test | Jobs | GPU-h | $ | Median W | Median GPU mem |
+|---|---|---|---|---|---|---|
+| **T1** never touched the GPU | peak 0% **and** 0 bytes GPU memory | 18,137 | 31,622 | $79,054 | 25.8 | 0 |
+| **T2** CUDA context, no kernel | peak 0%, memory > 0 | 1,750 | 65,575 | $163,937 | 27.0 | 1.9 GiB |
+| **T3** barely touched | peak ≤ 10%, < 1 GiB | 2,089 | 7,515 | $18,788 | 28.3 | 0.4 GiB |
+| T4 used the GPU | everything else | 52,873 | 489,292 | $1,223,231 | 70.6 | 5.6 GiB |
+
+T1 and T2 together are exactly the 97,196 never-ran GPU-h of case 2 (classes A1 + A2).
+The power readings agree: T1 and T2 sit at idle-card wattage.
+
+**T1 and T2 are different problems.**
+
+- **T1 is a placement problem.** The program never opened the GPU. It is a CPU job
+  in the GPU queue, whatever its outcome.
+- **T2 is an idle problem.** The program loaded a GPU framework (1.9 GiB of CUDA
+  context) and then never ran a kernel. It was written for a GPU and sat idle. Mostly
+  it is interactive sessions (27.6K GPU-h) and "other" jobs (26.2K). The fix is
+  case 2's idle-kill, not moving the job to CPU.
+
+### Where T1 sits
+
+| Job type | T1 GPU-h | Job type's total GPU-h |
+|---|---|---|
+| OTHER | 12,114 | 318,995 |
+| **LLMAPREDUCE:MAP** | **11,528** | **17,528 (66%)** |
+| LLSUB:INTERACTIVE | 5,158 | 52,916 |
+| LLSUB:BATCH | 2,822 | 204,564 |
+
+**Two-thirds of map-reduce GPU time never touched a GPU.** LLMapReduce is a
+CPU-parallel launcher, so these look like CPU fan-out jobs that were given a GPU by
+default. It is the single clearest offload target in the data.
+
+T1 by outcome: 11,475 GPU-h cancelled, 10,171 timed out, 7,191 completed, 2,778 failed.
+
+### Would they fit on a CPU node?
+
+Among T1 + T2 jobs, the median request is 8 CPUs and 83 GiB, and the 99th
+percentile is 40 CPUs and 350 GiB. **98.3% of the jobs (97.3% of the hours) fit on
+one 40-core, 384 GiB node.**
+
+That node size is an assumption. The data's `constraints` say `xeon-g6` (with some
+`&6248`, the Xeon Gold 6248), which is a 2 × 20-core part, and the largest per-CPU
+memory request is about 386 GB. The data doesn't describe the CPU-only partition,
+so check this against the real hardware.
+
+### A handful of owners hold most of it
+
+- **35 owners** (each with at least 20 GPU jobs) had half or more of their GPU-hours
+  never run a kernel. They account for **59,206 of the 97,196 GPU-h**.
+- The top 10 owners hold 57% of T1 + T2 hours, and the top 20 hold 71%.
+- **533 arrays** never ran a kernel in any task: 7,115 tasks, 12,573 GPU-h. Each is
+  one submission script, so each is one fix.
+
+The fix is a conversation or a default setting per workflow, not a cluster-wide rule.
+Owners stay hashed on the dashboard.
+
+### Confidence
+
+| Set | GPU-h | $ | Confidence |
+|---|---|---|---|
+| T1 + T2 that **completed** (case 2's A1) | 12,301 | $30,751 | **high**: the work succeeded without the GPU |
+| All of **T1** | 31,622 | $79,054 | **medium-high**: no GPU memory was ever allocated |
+| T2 | 65,575 | $163,937 | **not an offload**: counted under idle-kill |
+| T3 | 7,515 | $18,788 | **low**: may need the GPU briefly, and would run slower on CPU |
+
+Completed T1 + T2 jobs are mostly tiny: the median wall time is under a minute, and
+the 90th percentile is 46 minutes. Their hours sit in a few long runs (the 99th
+percentile is 49 hours).
+
+### Cost of being wrong
+
+- **A job that failed before reaching its GPU code** (2,778 GPU-h of T1 failed) looks
+  like T1 but needs a GPU once its bug is fixed. Offload only jobs that **completed**
+  in T1, or owners whose jobs are **consistently** T1.
+- **Moving a job to CPU doesn't make it free.** It frees the GPU, but the CPU cores
+  still cost money, and the price book has no CPU rate. Report the saving as GPU
+  capacity freed.
+- **Getting it wrong is cheap and visible:** a job wrongly sent to CPU fails fast or
+  runs slowly, and its owner resubmits with a GPU flag. That is much milder than
+  idle-kill mistakes, which destroy work in progress.
+
+### Bottom line
+
+CPU offload is real but small: **$31K near-certain, up to $79K**. The larger lever
+for the same never-ran hours is idle sessions (T2, $164K), which is case 2's
+idle-kill. The dashboard should show both, with separate owners: placement defaults
+for the map-reduce and batch launchers, and an idle timeout for interactive sessions.
