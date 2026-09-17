@@ -99,17 +99,76 @@ const tableWrap = (rows, cols, caption) => {
   return box;
 };
 
-/* ============================================================== render */
-fetch("data.json").then((r) => r.json()).then(render).catch((e) => {
+/* ------------------------------------------------- price: one rate, one scale */
+/* Every GPU figure in data.json is priced at the price book's rate. Changing the
+   rate rescales those (and only those -- blocks tagged priced_in:"engineer" are
+   salary, not GPU time), and we ask the API to re-price its own waterfall at the
+   same rate so the page shows ITS answer, tagged 2026-Q3+custom. */
+let RAW = null, BASE = 2.5, RATE = 2.5;
+
+const scale = (v, k = "") => {
+  if (Array.isArray(v)) return v.map((x) => scale(x));
+  if (v && typeof v === "object") {
+    if (v.priced_in === "engineer") return v;
+    return Object.fromEntries(Object.entries(v).map(([key, val]) => [key, scale(val, key)]));
+  }
+  if (typeof v === "number" && /usd/i.test(k)) return v * (RATE / BASE);
+  return v;
+};
+
+fetch("data.json").then((r) => r.json()).then((d) => {
+  RAW = d;
+  BASE = RATE = d.meta.price_book.usd_per_gpu_hour || 2.5;
+  const input = $("#rate");
+  input.value = RATE.toFixed(2);
+  const apply = () => {
+    const v = parseFloat(input.value);
+    if (!(v > 0) || v === RATE) return;
+    RATE = v;
+    draw();
+  };
+  input.addEventListener("change", apply);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") apply(); });
+  controls();
+  draw();
+}).catch((e) => {
   $("#subtitle").textContent = "could not load data.json -- run dashboard/build.py";
   console.error(e);
 });
+
+function draw() {
+  ["#hero", "#tile1", "#tile2", "#tile3", "#extras"].forEach((id) => { $(id).innerHTML = ""; });
+  render(scale(RAW));
+  priceCheck();
+}
+
+/* Ask the API to re-price its own waterfall at the current rate. Proof that the
+   control is an API call, not arithmetic: the response comes back tagged
+   2026-Q3+custom whenever the rate differs from the price book. */
+function priceCheck() {
+  const box = el("p", { class: "pricetag", id: "pricetag", text: "asking the API to re-price at $" + RATE.toFixed(2) + "/GPU-hour..." });
+  $("#tile1").appendChild(box);
+  fetch(`/api/v1/efficiency/summary?usd_per_gpu_hour=${RATE}`)
+    .then((r) => r.json())
+    .then((j) => {
+      const m = j.monetized || {};
+      box.innerHTML = `Live cross-check: <code>GET /v1/efficiency/summary?usd_per_gpu_hour=${RATE}</code> `
+        + `returns <b>${usdFull(m.amount || 0)}</b> allocated, priced as `
+        + `<b>${m.price_book_version || "?"}</b>`
+        + (m.price_book_version && m.price_book_version.includes("custom")
+          ? " &mdash; the API tags a re-priced answer, so a price change never reads as an infrastructure change."
+          : " &mdash; the price book's own rate.");
+    })
+    .catch(() => { box.textContent = "API not reachable from the page; figures above are priced locally at $" + RATE.toFixed(2) + "/GPU-hour."; });
+}
 
 function render(d) {
   const c = d.meta.cluster, rec = d.tile2.recoverable;
   $("#subtitle").innerHTML = `${num(c.nodes)} machines &middot; ${num(c.gpus_per_node * c.nodes)} V100 GPUs &middot; `
     + `${num(c.jobs)} jobs from ${c.users} researchers &middot; ${c.window_days} days &middot; `
-    + `priced at $${d.meta.price_book.usd_per_gpu_hour}/GPU-hour (price book ${d.meta.price_book.version})`;
+    + `priced at $${RATE.toFixed(2)}/GPU-hour `
+    + (RATE === BASE ? `(price book ${d.meta.price_book.version})`
+       : `(<b>${d.meta.price_book.version}+custom</b>, book rate $${BASE.toFixed(2)})`);
 
   /* ---- hero ---- */
   const overTarget = rec.point_usd >= rec.target_usd;
@@ -210,7 +269,7 @@ function render(d) {
           el("div", {}, [
             el("h3", { text: "Where it sits" }),
             table(a.split, [{ h: "Part", k: "label", l: 1 }, { h: "GPU-hours", f: (r) => num(r.gpu_hours) },
-              { h: "USD", f: (r) => usdFull(r.gpu_hours * d.meta.price_book.usd_per_gpu_hour) }]),
+              { h: "USD", f: (r) => usdFull(r.gpu_hours * RATE) }]),
           ]),
         ]),
         el("h3", { style: "margin-top:14px", text: "The jobs behind it (largest first)" }),
@@ -284,7 +343,7 @@ function render(d) {
           { h: "Machine", k: "node", l: 1, mono: 1 }, { h: "Role", k: "role", l: 1 },
         ]) : table(w.rows, [
           { h: "Part of cancelled time", k: "label", l: 1 }, { h: "GPU-hours", f: (r) => num(r.gpu_hours) },
-          { h: "USD", f: (r) => usdFull(r.gpu_hours * d.meta.price_book.usd_per_gpu_hour) },
+          { h: "USD", f: (r) => usdFull(r.gpu_hours * RATE) },
         ]),
       ]) : null,
     ])),
@@ -359,7 +418,10 @@ function render(d) {
     + ` The detection API was ${d.meta.api_up ? "live when this page was built" : "unreachable when this page was built; figures come from the local tables"}.`
     + ` Full working, case by case, in <code>track-2/ANALYSIS.md</code>; machine-readable numbers in <code>claims.json</code>.`;
 
-  /* ---- controls ---- */
+  /* (controls are wired once, in controls()) */
+}
+
+function controls() {
   const themeBtn = $("#theme");
   const startDark = matchMedia("(prefers-color-scheme: dark)").matches;
   let dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : startDark;

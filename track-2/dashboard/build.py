@@ -364,7 +364,7 @@ wrong = [
         "source": "GET /v1/queue/latency -> monetized",
         "claimed_usd": 9330306.65, "claimed_gpu_hours": None,
         "verdict": "6.3x the entire GPU bill",
-        "claim_label": "of waiting, as salary", "in_chart": False,
+        "claim_label": "of waiting, as salary", "in_chart": False, "priced_in": "engineer",
         "chart_note": "kept out of the chart beside the others: this one is a number to correct, not capacity to destroy",
         "cost_usd": round(3719 * USD_ENG, 0),
         "cost_note": "Counted per person and only past a 4-hour target, waiting is 3,719 person-hours "
@@ -406,6 +406,7 @@ hardware = {
 triage_summary = (pd.DataFrame(triage).cause.value_counts().to_dict() if triage else {})
 
 queue = {
+    "priced_in": "engineer",
     "p50_s": 0, "p95_h": 4.6, "p99_h": 14.8,
     "share_starting_within_a_minute": 0.588,
     "tail_share_of_hours": 0.31,

@@ -1131,6 +1131,7 @@
     "verdict": "6.3x the entire GPU bill",
     "claim_label": "of waiting, as salary",
     "in_chart": false,
+    "priced_in": "engineer",
     "chart_note": "kept out of the chart beside the others: this one is a number to correct, not capacity to destroy",
     "cost_usd": 353305.0,
     "cost_note": "Counted per person and only past a 4-hour target, waiting is 3,719 person-hours (46 people, about 4.5 h each per week) -- an upper bound of $353K, not $9.3M.",
@@ -1987,6 +1988,7 @@
   ]
  },
  "queue": {
+  "priced_in": "engineer",
   "p50_s": 0,
   "p95_h": 4.6,
   "p99_h": 14.8,

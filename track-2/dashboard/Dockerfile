@@ -7,4 +7,4 @@ COPY dashboard/ ./dashboard/
 COPY analysis/ ./analysis/
 EXPOSE 3000
 # The API is optional: build.py falls back to the local tables if it is down.
-CMD ["sh", "-c", "python dashboard/build.py && cd dashboard && python -m http.server 3000 --bind 0.0.0.0"]
+CMD ["sh", "-c", "python dashboard/build.py && python dashboard/serve.py"]
