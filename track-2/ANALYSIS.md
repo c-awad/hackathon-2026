@@ -12,6 +12,25 @@ prepped data (`python3 analysis/<script>.py`).
   useful work, not a measure of it.
 - The data is a four-month **sample** of MIT SuperCloud, not the whole cluster.
 
+### Decisions so far
+
+- **Don't drain the API's "top 5 underperforming nodes"** (`/v1/recommendations`,
+  `rec_drain_nodes`, "$57K"). They are ranked by finding count, and those counts
+  come from failing Slurm arrays (664 of their findings resolve to arrays through
+  `rootCauses`). Case 6 finds no hardware on any of them: 7 windows are
+  `user_code`, 1 `workload_mix`, 2 `cannot_determine`. None has a crash signature or
+  a located node failure. Draining them would remove 1,680 GPU-h a week (about $55K
+  a quarter) and save nothing, because the broken scripts would fail on other
+  machines. The one machine that really was broken ranks 21st by finding count.
+  See case 7.
+- **Don't drain the 121 storage-incident nodes.** It is one volume,
+  `pvc/scratch-lustre-02`. Draining would take 54% of the cluster offline. See
+  case 4.
+- **Do drain on a multi-owner crash signature.** `r216287-n200569` (SIGBUS) would
+  have been caught six days earlier for about $700 of capacity. See case 5.
+- **CANCELLED is not waste in itself.** Count only the idle time before the
+  cancel. See case 2.
+
 | # | Case | Status |
 |---|---|---|
 | 1 | Where the money goes | done (corrected in case 2) |
@@ -22,7 +41,7 @@ prepped data (`python3 analysis/<script>.py`).
 | 5 | Hardware-attributable failures | done |
 | 6 | Node triage (113 elevated-failure-rate findings) | done |
 | 7 | The API's "drain the top 5 nodes" recommendation | done |
-| 8 | The queue tail, priced in engineer-hours | next |
+| 8 | The queue tail, priced in engineer-hours | done |
 
 ---
 
@@ -951,3 +970,140 @@ serve.
 > The API's top suggestion, "drain five machines, save $57K", would cost $55K of
 > capacity a quarter and save nothing: those machines are healthy, and the failures
 > belong to a handful of broken scripts that would fail anywhere.
+
+---
+
+## Case 8 — The queue tail, and what waiting is worth
+
+Script: `analysis/case8_queue.py`
+
+**Question.** How long do researchers wait for GPUs, what is that worth, and would
+a 20% capacity cut make it worse? The brief frames it as *"98,213 engineer-hours of
+waiting… a salary number"*.
+
+### Headline
+
+**The API prices queue waiting at $9.33M, 6.3× the entire $1.49M GPU spend.**
+Merged per person, the waiting comes to **4,997 person-hours**, and **3,719** of
+those are past a 4-hour target. That is **$353K** at $95 an hour, *if* every waiting
+hour blocked the person. People at a keyboard (interactive sessions) waited
+**0.8 hours in total** over four months.
+
+### Why $9.33M is wrong
+
+`/v1/queue/latency` multiplies the sum of every job's `wait_sec` (98,214 h) by
+$95. Three problems:
+
+1. **It counts time jobs weren't eligible to run.** `wait_sec = time_start −
+   time_submit` includes `time_eligible − time_submit`: **22,880 h (23%)** of held
+   jobs, deferred start times and dependencies. All 30,713 such jobs are array
+   tasks. Real queue time is `time_start − time_eligible`, **75,334 h**.
+2. **It counts every job as a person.** 53% of jobs are array tasks. Someone with
+   1,000 tasks pending waits once, not 1,000 times. Merging each person's
+   overlapping waits turns 75,334 job-hours into **4,997 person-hours**.
+3. **It treats waiting as staffed time.** The rule's own text says *"nobody sits
+   watching a scheduler"*. The literal version, interactive sessions, is **$74**.
+
+| Way to count | Hours | At $95/h |
+|---|---|---|
+| API: every job's full wait | 98,214 | $9,330,307 |
+| queue time only, every job | 75,334 | $7,156,702 |
+| queue time, merged per person | 4,997 | $474,730 |
+| **past a 4 h target, merged per person** | **3,719** | **$353,319** |
+| interactive sessions only | 0.8 | $74 |
+
+We report **3,719 person-hours past target** (46 people, about 4.5 hours each per
+week) and don't add it to the GPU savings. The $353K is an upper bound on salary
+cost, because a researcher usually works on something else while a batch job waits.
+
+### The shape: most jobs start at once, a few wait days
+
+Queue wait (`time_start − time_eligible`), job-weighted: p50 **0 s**, p75 0.68 h,
+p90 2.0 h, p95 4.6 h, **p99 14.8 h**, p99.9 53 h.
+
+| Wait | Jobs | Share of jobs | Queue hours | Share of hours |
+|---|---|---|---|---|
+| < 1 min | 44,005 | 58.8% | 46 | 0.1% |
+| 1–10 min | 5,612 | 7.5% | 383 | 0.5% |
+| 10 min–1 h | 10,312 | 13.8% | 5,881 | 7.8% |
+| 1–4 h | 10,728 | 14.3% | 19,655 | 26.1% |
+| 4–12 h | 3,147 | 4.2% | 21,881 | 29.0% |
+| 12–24 h | 746 | 1.0% | 12,456 | 16.5% |
+| > 24 h | 288 | 0.4% | 15,031 | 20.0% |
+
+**The slowest 1% of jobs (749) hold 31% of queue hours.**
+
+- **By type:** batch and "other" jobs, arrays and non-arrays alike, hold nearly all
+  of it. Interactive sessions have a p99 wait of 21 s.
+- **By width:** single-GPU jobs hold 68,799 of the 75,334 h (median 12 s, p99
+  15.7 h). The 398 jobs of 9 or more GPUs rarely wait (median 1 s), but their p99 is
+  **192 h**: the widest jobs occasionally wait over a week for a contiguous block.
+- **By requested time limit:** unlimited requests (31,778 jobs) hold 37,327 h, half
+  of all queue time, with p90 3.7 h. Jobs asking for 4–24 h wait longest at the
+  median (26 min). A scheduler can backfill only jobs whose limit fits a gap, so
+  honest time limits are a free lever (see `rules::timelimit-overreservation`).
+
+### The two queue findings don't say what they seem to
+
+**`rules::queue-weekly-peak` is one day, not a weekly pattern.** Wednesday's 21,163
+submissions include **14,134 from one owner (u-41415979807) on a single date,
+2026-04-01**: 26 arrays of tasks running a median of 16 seconds each. They account
+for **15% of all queue hours** and only 1,704 GPU-h of work. **Without that owner,
+Wednesday's median wait is 1 second.** The finding averages a one-off burst into a
+"weekday in seven". The fix is packing tiny tasks into fewer, longer jobs, not a
+Wednesday capacity plan.
+
+**`rules::queue-starvation`'s biggest "starved" user wasn't starved.** It reports
+22,481 h for u-59477077536, but **22,291 h of that (99%) is pre-eligibility**:
+jobs held by their own begin time or dependencies. Their real queue time is 189 h,
+and only 8 of their jobs waited over 6 hours. Across all 22 starvation findings,
+64,209 h = **22,608 h pre-eligible (35%)** + 41,600 h queue. The rule should use
+`time_eligible`, not `time_submit`.
+
+**`rules::queue-wait-p95-slo`**: we reproduce the breach weeks (p95 over 4 h,
+100+ jobs) under any week grouping. Depending on whether jobs are grouped by
+submit, eligible or start time, we find 1 or 2 more weeks (2026-03-11, 2026-06-10)
+than the 8 findings; the rule's exact week boundary isn't documented. **Every
+breach has a median wait of 0.00–0.03 h: these are tail problems, not a slow
+queue.** The worst, the week of 2026-06-03 (p95 23.6 h), is one burst.
+
+### Is capacity what makes people wait?
+
+We built a 10-minute timeline of GPUs held by the sample's jobs (capacity 450):
+
+- **GPUs held:** median 191, p95 312, max 404.
+- **Someone had waited more than an hour and was still pending 78% of the time.**
+  GPUs held then: median 201, against 160 otherwise.
+- **Correlation between GPUs held when a long-waiting job became eligible and its
+  wait: 0.15.** The long waits barely track how full this sample is. They track
+  bursts, fairshare and per-user limits, and load outside the sample.
+- **While someone was waiting, jobs that never ran a kernel held a median of 34
+  GPUs:** 80,367 GPU-h ($201K) of idle allocation during contention. **In 62% of
+  those moments, the idle-held GPUs outnumbered the GPUs the long-waiters were asking
+  for.**
+
+**Caveat: the data is a sample.** MIT says it isn't fit for estimating utilization,
+and other jobs that aren't in the sample share these machines. "GPUs held" is a
+lower bound, so read the timeline as a shape, not a measured level.
+
+### Cost of being wrong about a 20% cut
+
+- **The fear:** cutting capacity 20% (to 360 of 450 GPUs) lengthens the queue tail
+  and slows research, which the CFO was told not to do.
+- **What the sample shows:** it holds more than 360 GPUs **0.6%** of the time.
+  Without the never-ran jobs (case 2), it **never** does. So the idle-kill and
+  placement cuts free the same GPUs a cut would remove, and they come out of the
+  hours when people are waiting.
+- **Order matters:** reclaim idle allocations first (case 2), then cut capacity.
+  A cut without reclaiming idle GPUs pushes contention onto the 1% tail, whose
+  wait is already 15 hours.
+- **Because the sample understates load,** watch the p95 queue SLO weekly after
+  any cut, and treat a new breach week as the signal to stop.
+
+### Candidate CFO line
+
+> Researchers rarely wait: most jobs start instantly. The painful tail, 3,700
+> person-hours past a 4-hour target, comes from bursts, not a full cluster, and
+> idle-but-allocated GPUs could have served most of it. Reclaim those first and a
+> 20% cut shouldn't slow anyone down. The API's "$9.3M of waiting" counts one
+> person with 14,000 tiny tasks as 14,000 people.
