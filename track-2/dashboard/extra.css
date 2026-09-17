@@ -1,0 +1,54 @@
+/* Additions on top of Shruti's styles.css, for the parts her three tabs did not
+   have: drill-down tables, the quota dial, and long tabs that scroll. Same tokens. */
+.tile.long { flex: none; }
+.rows.autorows { display: flex; flex-direction: column; flex: none; }
+.rows.autorows .row { overflow: visible; }
+.row.clickable { cursor: pointer; }
+.row.clickable:hover { border-color: var(--accent); }
+.row.open { border-color: var(--accent); }
+.ratebox input { width: 4.2em; background: transparent; border: 0; color: inherit; font: inherit; }
+.ratebox span { color: var(--ink-faint); font-weight: 400; }
+a.btn-report { text-decoration: none; display: inline-block; }
+.pricetag { font-size: 0.786rem; color: var(--ink-faint); margin: 8px 0 0; }
+.pricetag b { color: var(--accent); }
+.drillbox { margin-top: 12px; padding: 14px 16px; background: var(--panel-2);
+  border: 1px solid var(--accent); border-radius: 8px; max-height: 46vh; overflow: auto; }
+.detail { grid-column: 1 / -1; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+  font-size: 0.893rem; color: var(--ink-dim); cursor: default; }
+.detail b, .detail strong { color: var(--ink); }
+table { border-collapse: collapse; width: 100%; font-size: 0.857rem; margin: 8px 0; }
+th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child, th.l, td.l { text-align: left; }
+td.wrap { white-space: normal; min-width: 22rem; }
+th { color: var(--ink-faint); font-weight: 500; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+.note { font-size: 0.857rem; color: var(--ink-faint); margin: 6px 0; }
+.meta { font-size: 0.929rem; color: var(--ink-dim); margin: 6px 0; }
+.meta b { color: var(--ink); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 18px; margin-top: 10px; }
+.panel { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.dial { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-top: 10px; }
+.dialrow { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; font-size: 0.929rem; color: var(--ink-dim); }
+.dialrow label { display: flex; gap: 8px; align-items: center; }
+input[type=range] { width: 16rem; accent-color: var(--accent); }
+input[type=checkbox] { accent-color: var(--accent); }
+.readout { display: flex; flex-wrap: wrap; gap: 28px; margin: 14px 0 6px; align-items: flex-end; }
+.readout .big { font-size: 2.3rem; font-weight: 600; letter-spacing: -0.5px; line-height: 1; }
+.readout .unit { font-size: 0.857rem; color: var(--ink-dim); }
+.readout .delta { font-weight: 600; }
+.okc { color: var(--good); } .badc { color: var(--bad); }
+.hbar { display: grid; grid-template-columns: 15rem minmax(0,1fr) 6rem; gap: 10px; align-items: center; margin: 5px 0; font-size: 0.893rem; }
+.hbar .track { height: 0.9rem; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.hbar .fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.hbar .fill.dim { opacity: .45; }
+.hbar .v { text-align: right; font-variant-numeric: tabular-nums; }
+details > summary { cursor: pointer; color: var(--ink-faint); font-size: 0.857rem; }
+
+footer { font-size: 0.786rem; color: var(--ink-faint); }
+footer #pricetag b { color: var(--accent); }
+
+/* a tab that has grown past one screen keeps its wheel at a usable size */
+.tile.long .two-col { flex: none; min-height: 27rem; }
+.tile.long .drillbox { max-height: none; }
+h3 .fig-hint { font-weight: 400; margin-left: 8px; }
+h3 .fig-hint { display: inline; }

@@ -24,6 +24,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=ROOT, **kw)
 
+    def end_headers(self):
+        # The page is rebuilt on every start; a cached copy would show stale numbers.
+        if not self.path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def log_message(self, fmt, *args):          # one line per request, no noise
         if self.path.startswith("/api/"):
             print(f"proxy {self.command} {self.path} -> {args[1] if len(args) > 1 else ''}")

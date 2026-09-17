@@ -6,7 +6,7 @@ Everything for this submission lives in [`track-2/`](track-2/).
 
 | | |
 |---|---|
-| **The dashboard** | `cd track-2 && docker compose up` → **http://localhost:3000** |
+| **The dashboard** | `cd track-2 && docker compose up` → **http://localhost:3000** (five tabs; the same data as one long page at `/classic/`) |
 | **The report** | [`track-2/REPORT.md`](track-2/REPORT.md) |
 | **The claims** | [`track-2/claims.json`](track-2/claims.json) |
 | **The working** | [`track-2/ANALYSIS.md`](track-2/ANALYSIS.md) — case by case, 1 to 9b |
@@ -40,6 +40,15 @@ make validate CLAIMS=claims.json URL=http://localhost:3000   # check before subm
 make mcp-demo                                                # drive the MCP server
 python3 analysis/case2_recoverable.py                        # any single case
 ```
+
+## Who built what
+
+The dashboard's **UI design is Shruti Doshi's** — the tabbed shell, KPI rows, spend
+wheel, row components and stylesheet come from her dashboard, preserved in
+`track-2/Shruti's dashboard/`. The version served on `:3000` puts that design on top
+of the shared data pipeline (`dashboard/build.py`): one waste class per job, live
+`POST /v1/causal`, the price-book override through the `/api` proxy, and the
+scheduler simulation behind tab 4.
 
 ## What we found, in short
 

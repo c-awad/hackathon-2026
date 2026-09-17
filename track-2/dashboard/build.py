@@ -274,6 +274,46 @@ recoverable["basis"] = ("Jobs that never ran a kernel (returned by an idle timeo
                         "half of near-idle jobs, half of idle second cards. CANCELLED is not counted as "
                         "waste in itself -- only the idle time before the cancel.")
 
+# ---------------------------------------------------- the spend wheel's buckets
+# One bucket per case-2 class, so every GPU-hour sits in exactly one slice. `cut`
+# is that bucket's share of the recoverable point estimate, so the slices' cuts
+# sum to the headline.
+def _bucket(key, name, plain, mask, cut_hours, action, owner, confidence, action_id=None):
+    h = float(j.gpu_hours[mask].sum())
+    busy_h = float((j.gpu_hours * j.sm_util_avg / 100)[mask].sum())
+    return {"key": key, "name": name, "plain": plain, "jobs": int(mask.sum()),
+            "gpu_hours": round(h, 0), "usd": usd(h), "share_of_bill": h / TOTAL,
+            "busy_pct": round(100 * busy_h / h, 1) if h else 0.0,
+            "cut_gpu_hours": round(float(cut_hours), 0), "cut_usd": usd(float(cut_hours)),
+            "cut_share_of_bill": float(cut_hours) / TOTAL,
+            "action": action, "owner": owner, "confidence": confidence, "action_id": action_id}
+
+
+spine = [
+    _bucket("never_used", "Held, never used",
+            "Jobs that held GPUs and never ran a single calculation on them, then ended without finishing.",
+            A2, idle_after(1)[A2].sum(),
+            "End any allocation that has sat at 0% for an hour.", "Scheduler policy (SRE)", "high", "idle_kill"),
+    _bucket("cpu_work", "CPU work on GPU machines",
+            "Jobs that finished successfully without ever touching their GPU. The work belonged on a CPU machine.",
+            A1, j.gpu_hours[A1].sum(),
+            "Default the map-reduce and batch launchers to no GPU.", "Research computing", "high", "cpu_offload"),
+    _bucket("barely_used", "Barely used",
+            "GPUs that averaged under 5% but did compute at some point. Some of this is real bursty work.",
+            B, 0.5 * b_idle.sum(),
+            "Review with owners; count only half, because bursty jobs look idle on average.", "Top owners (hashed)", "low"),
+    _bucket("idle_card", "Second card sat idle",
+            "Multi-GPU jobs where one card worked and another never did. Invisible in the job table.",
+            C, 0.5 * c_idle.sum(),
+            "Right-size two-GPU requests that use one card.", "10 owners hold 85%", "medium", "right_size"),
+    _bucket("killed_by_clock", "Busy work killed by the clock",
+            "Jobs computing hard when the time limit ended them. Real work destroyed: fix with checkpointing, not a cut.",
+            cls == "D", 0.0, "No cut. Checkpointing saves the reruns.", "--", "not a cut"),
+    _bucket("productive", "Productive or unclassified",
+            "Everything else: work that used its GPUs, or that we have no grounds to call waste.",
+            cls == "productive", 0.0, "No cut.", "--", "not a cut"),
+]
+
 # ------------------------------------------- tile 3: what it costs if wrong
 def node_cap(nodes, weeks):
     return len(nodes) * 2 * 24 * 7 * weeks
@@ -519,6 +559,7 @@ out = {
     "meta": meta,
     "tile1": {"waterfall": waterfall, "outcomes": outcomes, "util_bands": util_bands,
               "api_summary": summary},
+    "spine": spine,
     "tile2": {"actions": actions, "recoverable": recoverable},
     "tile3": {"wrong": wrong},
     "hardware": hardware,

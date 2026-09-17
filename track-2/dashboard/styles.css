@@ -1,0 +1,428 @@
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --panel-2: #1c232c;
+  --line: #2b3440;
+  --ink: #e6edf3;
+  --ink-dim: #9aa7b4;
+  --ink-faint: #6e7d8c;
+  --good: #3fb950;
+  --bad: #f85149;
+  --warn: #d29922;
+  --accent: #58a6ff;
+
+  /* Fluid type. One base size drives every piece of text on the page. Height is the
+     limiter on a tab (the fold is a vertical budget), width is the limiter on a
+     stacked phone, so the preferred size is the tighter of the two. ~13.5px at
+     1280×720, 15px at 1440×800, 20px at 1920×1080, 24px at 2560×1440. Every size
+     below is a multiple of this, so they all move together.
+     Button padding stays in px — only the label inside the button scales. */
+  --fs: clamp(11.5px, min(0.5px + 1.81vh, 8px + 0.7vw), 24px);
+}
+
+* { box-sizing: border-box; }
+
+html { font-size: var(--fs); }
+
+/* App shell: the page itself never scrolls, `main` does. That gives the flex chain
+   below — main > tile > two-col > rows — a definite height to divide up, so a tab
+   fills the viewport exactly instead of leaving dead space under it. With only a
+   `min-height` here the chain would grow to fit its content instead of shrinking. */
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  font: 1rem/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+
+/* ------------------------------------------------------------------ header */
+.top {
+  display: flex; justify-content: space-between; align-items: center; gap: 24px;
+  padding: 12px 32px 11px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #131a23, var(--bg));
+}
+h1 { margin: 0; font-size: 1.32rem; letter-spacing: -0.2px; max-width: 74ch; }
+.sub { margin: 3px 0 0; color: var(--ink-dim); font-size: 0.893rem; }
+
+.top-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.btn-report {
+  flex: none; background: var(--accent); color: #0b1017; border: 0; border-radius: 7px;
+  font: inherit; font-size: 0.93rem; font-weight: 600; padding: 8px 15px; cursor: pointer;
+  white-space: nowrap;
+}
+.btn-report:hover { background: #79b8ff; }
+.btn-email {
+  flex: none; display: inline-flex; align-items: center; gap: 7px;
+  background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 7px; font: inherit; font-size: 0.93rem; font-weight: 600;
+  padding: 8px 15px; cursor: pointer; white-space: nowrap;
+}
+.btn-email:hover { border-color: var(--accent); color: var(--accent); }
+.btn-plain {
+  background: var(--panel-2); color: var(--ink-dim); border: 1px solid var(--line);
+  border-radius: 6px; font: inherit; font-size: 0.93rem; padding: 7px 13px; cursor: pointer;
+}
+.btn-plain:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+/* -------------------------------------------------------------------- tabs */
+.tabs {
+  display: flex; gap: 4px; padding: 0 32px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  position: sticky; top: 0; z-index: 10;
+}
+.tab {
+  display: flex; align-items: center; gap: 8px;
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--ink-faint); font: inherit; font-size: 0.93rem;
+  padding: 9px 15px 8px; cursor: pointer;
+}
+.tab b {
+  display: inline-flex; align-items: center; justify-content: center;
+  /* sized in em so the badge grows with its own digit */
+  width: 1.73em; height: 1.73em; border-radius: 50%;
+  background: var(--panel-2); color: var(--ink-faint);
+  font-size: 0.786rem; font-weight: 600;
+}
+.tab:hover { color: var(--ink-dim); }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tab[aria-selected="true"] b { background: var(--accent); color: #0e1116; }
+.tile[hidden] { display: none; }
+
+main {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column;
+  padding: 12px 32px 22px;
+}
+
+/* ------------------------------------------------------------------- tiles */
+/* Every tab has to land inside one screen fold, so the chrome here is tight on
+   purpose. Anything that wants more room belongs in the report. */
+.tile {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 18px 16px;
+  margin-bottom: 14px;
+  scroll-margin-top: 46px;
+}
+h2 { margin: 0 0 3px; font-size: 1.21rem; letter-spacing: -0.2px; }
+h3 { margin: 0 0 7px; font-size: 0.964rem; }
+h4 { margin: 0 0 8px; font-size: 0.964rem; color: var(--ink-dim); }
+
+/* The diagram panel's width follows its own height, never its neighbour's content, so
+   the list beside it can never squeeze or stretch the wheel — and the panel has no
+   leftover space inside it. Tabs 1 and 2 use this identically. */
+.two-col {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px; align-items: stretch;
+}
+.two-col > .fig { aspect-ratio: 6 / 7; min-width: 21rem; max-width: 900px; }
+.col { min-height: 0; display: flex; flex-direction: column; }
+.tile > .col { flex: 1; }
+
+.callout {
+  margin-top: 16px; padding: 12px 15px;
+  border-left: 3px solid var(--accent); background: var(--panel-2);
+  border-radius: 0 6px 6px 0; font-size: 1rem; color: var(--ink-dim);
+}
+.callout strong { color: var(--ink); }
+.warnbox { border-left-color: var(--warn); }
+
+/* ------------------------------------------ the three numbers on every tab */
+.kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 11px; margin-bottom: 13px;
+}
+.kpi {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
+  padding: 11px 14px 10px;
+}
+.kpi strong {
+  display: block; font-size: 1.786rem; line-height: 1.1; letter-spacing: -0.7px;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-label { display: block; font-size: 0.93rem; margin-top: 3px; }
+.kpi-sub { display: block; font-size: 0.821rem; color: var(--ink-faint); margin-top: 2px; }
+
+/* ------------------------------------------- one action or risk per row */
+/* Equal-height rows that share whatever vertical space is going, so six rows on
+   tab 1 line up with six rows on tab 2 and neither list leaves a gap. The floor is in
+   rem so a row can never end up shorter than the text inside it. */
+.rows {
+  flex: 1; min-height: 0;
+  display: grid; grid-auto-rows: minmax(3.2rem, 1fr); gap: 7px;
+}
+.row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 10.15rem; gap: 14px; align-items: center;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-left: 3px solid var(--ink-faint); border-radius: 8px; padding: 8px 13px;
+  overflow: hidden;
+}
+.row-main { min-width: 0; }
+.row-title { display: block; font-size: 0.964rem; font-weight: 600; }
+.row-sub { display: block; font-size: 0.857rem; color: var(--ink-dim); margin-top: 2px; }
+.row-sub i { font-style: normal; color: var(--ink-faint); }
+/* On the comparison tabs a row is one line high, so long text truncates rather than
+   reflowing and changing the geometry the two tabs are meant to share. */
+.two-col .row-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-figs { text-align: right; font-variant-numeric: tabular-nums; }
+.row-figs strong { display: block; font-size: 1.214rem; letter-spacing: -0.4px; }
+/* Both comparison tabs put exactly one of these under the figure, so their rows are
+   the same height to the pixel. Confidence is carried by colour, not by a taller pill. */
+.row-note { display: block; font-size: 0.821rem; line-height: 1.45; color: var(--ink-faint); margin-top: 2px; }
+.row-note.high { color: #7ee787; }
+.row-note.medium { color: #e3b341; }
+.row-note.low { color: #ffb4ae; }
+.row-figs .level { display: inline-block; margin-top: 3px; }
+.level { font-size: 0.786rem; padding: 2px 8px; border-radius: 9px; text-transform: lowercase; }
+.level-safe { border-left-color: var(--good); }
+.level-safe .level { background: #1d3b24; color: #7ee787; }
+.level-risky { border-left-color: var(--warn); }
+.level-risky .level { background: #3a3117; color: #e3b341; }
+.level-needs-people { border-left-color: var(--accent); }
+.level-needs-people .level { background: #16324d; color: #9ecbff; }
+.level-not-a-saving { border-left-color: var(--bad); }
+.level-not-a-saving .level { background: #3d211f; color: #ffb4ae; }
+
+/* ------------------------------------------------------------------ figures */
+.fig {
+  margin: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 10px 13px 9px;
+}
+.fig figcaption { font-size: 0.857rem; color: var(--ink-faint); margin-bottom: 6px; max-width: 80ch; }
+.fig figcaption b { color: var(--ink); font-size: 0.929rem; font-weight: 600; }
+.fig-hint { display: block; }
+/* Exactly two lines are reserved, so a caption that wraps at one width cannot make
+   tab 2's wheel a different size from tab 1's. In rem, so the reservation still holds
+   two lines once the text scales up. */
+.two-col > .fig figcaption { height: 3rem; overflow: hidden; }
+
+/* The wheel is taken out of the flow so its intrinsic size cannot stop the tab from
+   shrinking. It fills this box, letterboxed square and centred by its own viewBox. */
+.donut-wrap { flex: 1; min-height: 0; position: relative; }
+.donut-wrap svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wheel-hit { cursor: help; }
+.donut-wrap.is-guiding .wheel-slice { opacity: 0.38; }
+.donut-wrap.is-guiding .wheel-slice.is-hot { opacity: 1; }
+.wheel-slice.is-hot .wheel-hit { fill: rgba(255, 255, 255, 0.07); stroke: #e6edf3; stroke-width: 1.25; }
+.row.is-hot { background: #222a34; border-color: #3d4a58; }
+.wheel-tip {
+  position: fixed; z-index: 20; pointer-events: none;
+  max-width: min(17.5rem, calc(100% - 16px));
+  padding: 9px 11px 8px;
+  background: #12181f; color: var(--ink);
+  border: 1px solid #3d4a58; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 0.821rem; line-height: 1.4;
+}
+.wheel-tip[hidden] { display: none; }
+.wheel-tip-name {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 0.929rem; font-weight: 600;
+}
+.wheel-tip-plain { display: block; color: var(--ink-dim); margin-top: 5px; }
+.wheel-tip-figs {
+  display: block; margin-top: 7px; font-variant-numeric: tabular-nums;
+  color: var(--ink); font-weight: 600;
+}
+.wheel-tip-sub { display: block; color: var(--ink-faint); margin-top: 3px; font-size: 0.786rem; }
+
+/* ---------------------------------------------------------- the metric spine */
+.spine { display: flex; flex-direction: column; gap: 9px; }
+.spine-row {
+  display: grid; grid-template-columns: minmax(14.3rem, 1.05fr) minmax(15.7rem, 1.5fr) 13.6rem;
+  gap: 18px; align-items: start;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ink-faint);
+  border-radius: 8px; padding: 13px 15px;
+}
+.spine-name { display: block; font-size: 1.036rem; font-weight: 600; }
+.spine-plain { display: block; font-size: 0.893rem; color: var(--ink-faint); margin-top: 3px; }
+.spine-track {
+  position: relative; height: 12px; background: #131a21;
+  border-radius: 3px; overflow: hidden; margin-top: 4px;
+}
+.spine-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 3px; }
+.spine-fill.ghost { background: #2b3440; }
+.spine-fill.cut { box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
+.spine-note { font-size: 0.893rem; color: var(--ink-dim); margin-top: 8px; }
+.spine-note.dim { color: var(--ink-faint); }
+.spine-note b { color: var(--ink); }
+.spine-figs { text-align: right; font-variant-numeric: tabular-nums; }
+.spine-figs strong { font-size: 1.429rem; display: block; letter-spacing: -0.5px; }
+.spine-figs span { font-size: 0.857rem; color: var(--ink-faint); display: block; margin-top: 2px; }
+.cut-val { color: var(--good); }
+.none-val { color: var(--ink-faint); }
+.cost-val { color: var(--bad); margin-top: 6px; }
+
+.conf { font-size: 0.786rem; padding: 1px 6px; border-radius: 9px; }
+.conf-high { background: #1d3b24; color: #7ee787; }
+.conf-medium { background: #3a3117; color: #e3b341; }
+.conf-low { background: #3d211f; color: #ffb4ae; }
+.conf-not { background: #222a34; color: var(--ink-faint); }
+
+.risk { font-size: 0.786rem; padding: 2px 7px; border-radius: 9px; display: inline-block; margin-bottom: 4px; }
+.risk-high { background: #3d211f; color: #ffb4ae; }
+.risk-medium { background: #3a3117; color: #e3b341; }
+.risk-low { background: #1d3b24; color: #7ee787; }
+.risk-not-a-cut { background: #222a34; color: var(--ink-faint); }
+
+/* ---------------------------------------------------------- estimate bars */
+.bars { display: flex; flex-direction: column; gap: 10px; }
+.bar-row { display: grid; grid-template-columns: 6.4rem 1fr 12.9rem; align-items: center; gap: 14px; }
+.bar-name { font-size: 0.857rem; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.4px; }
+.bar-track { position: relative; height: 34px; background: var(--panel-2); border-radius: 5px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 5px 0 0 5px; }
+.bar-fill.low { background: #7d2620; }
+.bar-fill.point { background: #1f6f2c; }
+.bar-fill.high { background: #1b4f6b; }
+.bar-target { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); }
+.bar-target::after {
+  content: "20% target"; position: absolute; top: -1px; left: 6px;
+  font-size: 0.75rem; color: var(--warn); white-space: nowrap;
+}
+.bar-value { font-variant-numeric: tabular-nums; }
+.bar-value strong { font-size: 1.214rem; }
+.bar-value span { color: var(--ink-faint); font-size: 0.857rem; display: block; }
+.bar-basis { grid-column: 2 / 4; margin-top: -4px; color: var(--ink-faint); font-size: 0.893rem; }
+
+figure { margin: 0; }
+figcaption { font-size: 0.893rem; color: var(--ink-dim); margin-bottom: 6px; }
+svg { width: 100%; height: auto; display: block; }
+
+/* ------------------------------------------------------ the generated report */
+#report { margin-bottom: 26px; }
+#report[hidden] { display: none; }
+.report-toolbar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 0 15px; margin-bottom: 18px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--bg); z-index: 5;
+}
+.report-title { font-size: 0.929rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.6px; }
+.report-actions { margin-left: auto; display: flex; gap: 8px; }
+.report-meta { color: var(--ink-faint); font-size: 0.893rem; margin: 0 0 26px; }
+#report-body > .r-h1 { font-size: 1.857rem; margin: 0 0 10px; max-width: 46ch; }
+.r-h2 {
+  font-size: 1.357rem; margin: 42px 0 10px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.r-h3 { font-size: 1.071rem; margin: 26px 0 10px; color: var(--ink); }
+.r-h4 { font-size: 0.929rem; margin: 0 0 8px; color: var(--ink-dim); font-weight: 600; }
+.r-p { font-size: 0.964rem; color: var(--ink-dim); margin: 0 0 16px; max-width: 95ch; }
+.r-p.dim { color: var(--ink-faint); font-size: 0.893rem; }
+.r-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(24.3rem, 1fr)); gap: 16px; }
+tr.safe-row td { background: rgba(63, 185, 80, 0.06); }
+td.bad-cell { color: #ffb4ae; }
+td i { color: var(--ink-faint); font-style: normal; font-size: 0.821rem; }
+
+/* ------------------------------------------------------------------- cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(21.4rem, 1fr)); gap: 16px; }
+.card {
+  background: var(--panel-2); border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: 8px; padding: 16px 17px;
+}
+.card.risk-medium { border-left-color: var(--warn); background: var(--panel-2); }
+.card h4 { margin: 0 0 10px; font-size: 1.036rem; color: var(--ink); }
+.opt-row {
+  display: flex; justify-content: space-between; gap: 12px; padding: 7px 0;
+  border-bottom: 1px solid var(--line); font-size: 0.964rem;
+}
+.opt-row:last-of-type { border-bottom: 0; }
+.opt-val { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dimval { color: var(--ink-faint); }
+.badge { font-size: 0.75rem; padding: 1px 6px; border-radius: 9px; margin-left: 7px; white-space: nowrap; }
+.badge.overstates, .badge.true { background: #3d211f; color: #ffb4ae; }
+.badge.defensible { background: #1d3b24; color: #7ee787; }
+.costline { margin: 11px 0 0; font-size: 0.929rem; color: var(--ink-dim); }
+.costline b { color: var(--bad); }
+.defence {
+  margin: 11px 0 0; padding-top: 10px; border-top: 1px solid var(--line);
+  font-size: 0.893rem; color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------------ tables */
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(27.9rem, 1fr)); gap: 24px; margin-top: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.929rem; }
+th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+th { color: var(--ink-faint); font-weight: 600; font-size: 0.821rem; text-transform: uppercase; letter-spacing: 0.4px; }
+th:first-child, td:first-child { text-align: left; font-variant-numeric: normal; }
+th:nth-child(2), td:nth-child(2) { text-align: left; }
+td.node { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.857rem; }
+td.wrap { white-space: normal; font-size: 0.893rem; color: var(--ink-dim); }
+tr.owned td { background: rgba(210, 153, 34, 0.07); }
+.flag { color: var(--warn); font-size: 0.821rem; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 7px; }
+
+/* ------------------------------------------------------------------ limits */
+.limits { display: grid; gap: 12px; }
+.limit {
+  display: grid; grid-template-columns: minmax(12.9rem, 19rem) 1fr; gap: 18px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--line);
+}
+.limit:last-child { border-bottom: 0; padding-bottom: 0; }
+.limit b { font-size: 0.964rem; }
+.limit p { margin: 0; color: var(--ink-dim); font-size: 0.964rem; }
+
+footer { color: var(--ink-faint); font-size: 0.821rem; line-height: 1.55; border-top: 1px solid var(--line); padding-top: 11px; }
+
+/* Below this the two columns cannot both be useful, so the page goes back to
+   stacking and scrolling normally: rows size to their text and nothing is clipped. */
+@media (max-width: 1080px) {
+  body { height: auto; min-height: 100vh; overflow: visible; }
+  main { overflow: visible; }
+  main, .tile, .two-col, .rows, .fig, .donut-wrap { min-height: auto; }
+  main, .tile, .two-col, .rows { flex: none; }
+  .two-col { grid-template-columns: 1fr; }
+  .rows { grid-auto-rows: auto; }
+  .two-col .row-sub { white-space: normal; }
+  /* Release the height-driven panel: stacked, it would be as tall as the column is
+     wide, leaving a huge empty box around the wheel. */
+  .two-col > .fig { aspect-ratio: auto; min-width: 0; max-width: none; }
+  .two-col > .fig figcaption { height: auto; }
+  .donut-wrap {
+    position: static; margin: 0 auto;
+    width: min(100%, 340px); aspect-ratio: 1;
+  }
+  .donut-wrap svg { position: static; width: 100%; height: 100%; }
+}
+
+@media (max-width: 860px) {
+  .spine-row, .row { grid-template-columns: 1fr; gap: 10px; }
+  .spine-figs, .row-figs { text-align: left; }
+  .bar-row { grid-template-columns: 5.7rem 1fr; }
+  .bar-value, .bar-basis { grid-column: 1 / -1; }
+  .limit { grid-template-columns: 1fr; gap: 4px; }
+  main, .top, .tabs { padding-left: 18px; padding-right: 18px; }
+  .top { flex-direction: column; align-items: flex-start; }
+  .tabs { overflow-x: auto; }
+  .tab { white-space: nowrap; }
+  .donut-wrap { grid-template-columns: 1fr; }
+  .donut-wrap svg { max-width: 260px; margin: 0 auto; }
+}
+
+/* Printing is only ever asked for from the report, so hide the app chrome. Pin the
+   scale, since vh-based text would size itself against the screen, not the page. */
+@media print {
+  :root { --fs: 12px; }
+  body { background: #fff; color: #111; height: auto; overflow: visible; }
+  .top, .tabs, .report-toolbar, .btn-report, footer { display: none; }
+  main { padding: 0; max-width: none; overflow: visible; flex: none; }
+  .tile { display: none; }
+  .kpi, .fig, .spine-row, .row, .card, .callout { break-inside: avoid; }
+  .wheel-tip, .fig-hint { display: none !important; }
+  .r-h2 { break-before: page; }
+  #report-body > .r-h1 + .report-meta + .r-h2 { break-before: auto; }
+}
