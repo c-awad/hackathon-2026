@@ -61,8 +61,9 @@ python3 analysis/case2_recoverable.py                        # any single case
 ## AI models, assistants and frameworks we used
 
 **All of the code, analysis and prose in this submission was produced with
-[Claude Code](https://claude.com/claude-code), running Claude Opus 5 (1M context),
-in an interactive session.** No other AI model, agent framework or coding assistant
+[Claude Code](https://claude.com/claude-code) in an interactive session, running
+Claude Opus 5 (1M context) for almost all of it and Claude Fable 5.1 for the final
+case (case 10, the credits pool).** No other AI model, agent framework or coding assistant
 was used, and no LLM is called at runtime by anything we shipped: the dashboard and
 every analysis script are plain Python and JavaScript over the prepped Parquet
 tables and the MantisGrid API.
@@ -77,8 +78,10 @@ asks teams to defend — whether cancelled jobs count as waste, where to set the
 idle-timeout grace period and the elastic-quota threshold, and which findings were
 worth arguing with. Several of the strongest results exist because the team asked
 for them rather than because the model proposed them: the CPU-offload tiering, the
-scheduler simulation and its per-user-quota model, the MCP transcript, and the
-dashboard's price control.
+scheduler simulation and its per-user-quota model, the MCP transcript, the
+dashboard's price control, and the credits pool — including the two design changes
+that made it work (never reduce the lender's own quota; set the loan window to the
+mean job length and gate on predicted runtime).
 
 Corrections the team's questions forced, all recorded in the documents: the
 "never ran a kernel" figure was initially overstated ($369K → $243K, because a

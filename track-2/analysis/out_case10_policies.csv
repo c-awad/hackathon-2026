@@ -1,0 +1,8 @@
+policy,person_h,total_h,over_4h,p95_h,p99_h,usd,borrowed_gpu_h,lender_blocked_h,overrun_gpu_h
+NOW: fixed quotas,1325.8,30245.4,1040,1.73,5.35,125947,,,
+Elastic quota under 70%,167.7,9552.5,378,0.3,2.55,15933,,,
+Predicted quota (2-week history),18766.6,562393.3,25671,44.8,89.38,1782831,,,
+"Pool, gated on REQUESTED limit",1325.6,30241.6,1040,1.73,5.35,125929,25.7,0.0,0.0
+"Pool, gated on PREDICTED runtime",1183.2,28668.8,938,1.66,5.01,112400,10027.6,4.3,2625.9
+Pool (predicted) + idle timeout,1047.0,27576.6,894,1.62,4.81,99463,9747.8,0.0,2414.3
+Reference: no quotas,67.1,4098.8,6,0.19,1.18,6370,,,

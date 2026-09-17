@@ -35,6 +35,11 @@ prepped data (`python3 analysis/<script>.py`).
   *same user* is at a per-user concurrency cap (16 / 32 / 65 GPUs) with a median
   of **287 of 450 GPUs free**. The fix is elastic caps and the idle timeout, not
   a different order. See case 9.
+- **Prefer a credits pool to the elastic quota as the first step.** The elastic
+  rule is reactive and untested under load; a pool gated on *predicted runtime*
+  with a window of the mean job length cuts waiting 11-21% with near-zero measured
+  harm to lenders. Do **not** forecast quotas from recent demand: it is too bursty
+  (+1,316% waiting). See case 10.
 
 | # | Case | Status |
 |---|---|---|
@@ -49,6 +54,7 @@ prepped data (`python3 analysis/<script>.py`).
 | 8 | The queue tail, priced in engineer-hours | done |
 | 9 | Is the scheduler optimized? Would reordering help? | done |
 | 9b | The same simulation with per-user caps modelled: now vs optimized | done |
+| 10 | Predicted quotas and a credits pool: are they credible? | done |
 
 ---
 
@@ -1375,3 +1381,126 @@ decision about fairness rather than a technical one.
 > 1,267 person-hours handed back to researchers, and it costs no capacity. (Worth up
 > to $120K if that waiting fully blocks them; we report the hours, because that
 > conversion is the one we argue against in `/v1/queue/latency`.)
+
+---
+
+## Case 10 — Predicted quotas and a credits pool: are they credible?
+
+Script: `analysis/case10_credits.py`. Outputs: `analysis/out_case10_policies.csv`,
+`analysis/out_case10_loan_sweep.csv`, `analysis/out_case10_full.log`.
+
+**Question.** The elastic quota of case 9b is reactive: it lifts the cap whenever
+the cluster is quiet, with no idea who is about to come back, and without
+preemption a long job started in a quiet hour still holds its cards when everyone
+returns. Two alternatives were proposed: **forecast each researcher's quota**, and
+a **credits pool** where someone who is away lends their unused quota for a bounded
+window. Are they credible?
+
+### The objection to the elastic rule is right, and the sample cannot test it
+
+In this sample the elastic rule harms almost nobody: 57 researchers better off, 2
+worse, by 0.2 hours at most. **But that is because the sample is rarely full.** The
+mechanism of harm is visible anyway: of the 21,570 jobs that start earlier under the
+elastic rule, **136 run longer than 24 hours and one for 8 days**. Those are the jobs
+that would hold cards when demand returns. The −87% in case 9b is therefore an
+upper bound under conditions that flatter it.
+
+### Results (all 74,838 startable jobs, 18 weeks)
+
+| Policy | Person-hours | vs today | Jobs > 4 h | Borrowed | Harm to lenders |
+|---|---|---|---|---|---|
+| **Today: fixed quotas** | **1,326** | — | 1,040 | — | — |
+| Elastic quota under 70% | 168 | −87% | 378 | — | *untestable here* |
+| Predicted quota (2-week demand history) | 18,767 | **+1,316%** | 25,671 | — | — |
+| Pool, gated on **requested** time limit | 1,326 | 0% | 1,040 | 26 GPU-h | 0 h |
+| **Pool, gated on predicted runtime** | **1,183** | **−11%** | 938 | 10,028 GPU-h | 4.3 h |
+| **Pool (predicted) + 1 h idle timeout** | **1,047** | **−21%** | 894 | 9,748 GPU-h | 0 h |
+| *Reference: no quotas* | 67 | −95% | 6 | — | — |
+
+### Idea 1 — forecasting each researcher's quota: not credible on this data
+
+The forecast sizes next week's quota from the researcher's **peak in-flight demand
+over the previous two weeks**, strictly causal, clipped to 2–64 GPUs.
+
+**Demand is too bursty to forecast.** Across active researcher-weeks (six-week
+check): the forecast was **too low 21% of the time**, and when it was low the
+researcher needed a median **2× the forecast**; **13% of active weeks followed two
+weeks of no demand at all**. Someone submits a 500-task array out of nowhere, meets
+a quota sized for their quiet fortnight, and queues behind themselves. Waiting rises
+**1,316%** and 133 of 195 researchers are worse off.
+
+Two honest caveats. Today's quotas were inferred from each researcher's peak over
+the whole four months, so the baseline has **hindsight** the forecast does not. And
+a too-tight quota only hurts in a sample with spare capacity; on a saturated
+cluster, tighter quotas buy fairness this data cannot show. What survives both
+caveats: the forecast's *direction* is informative — median demand (16 GPUs) is
+double the median quota (8), and the forecast is tighter than today's quota in 34%
+of researcher-weeks — so today's ladder is misallocated. **Use the forecast to
+review quotas quarterly, not to set them weekly.**
+
+(An earlier version of this forecast took a time-weighted 95th percentile of
+demand. That is dominated by the hours a researcher has nothing in flight and
+collapsed every quota to 1 GPU. A quota has to cover the peak.)
+
+### Idea 2 — the credits pool: credible, once the gate is right
+
+**Design.** A researcher who has been away — nothing running, nothing queued, for 4
+hours — makes their quota available to a pool. **Their own quota is never reduced**,
+so nobody is blocked by their own generosity. A waiting job may run over its owner's
+quota only if it is expected to finish inside the **loan window**, and nobody may
+borrow more than their own quota again. The cost of lending lands on the *cluster*,
+and the harm we measure is exactly that: researcher-hours spent queued, under their
+own quota, because the cluster was full while borrowed jobs were running.
+
+**Gating on the requested time limit makes the pool inert.** The median requested
+limit is 24 hours; the median runtime is about a minute: a **2,057× over-ask**. At
+the mean-job-length window only a handful of jobs qualify, and 26 GPU-hours were
+ever borrowed.
+
+**Gating on predicted runtime makes it work.** A job's runtime *is* predictable from
+its owner's history: the p90 duration of their jobs that had finished before this
+one became eligible (causal). 98% of jobs have a usable history, and 85% finish
+within the prediction.
+
+**The loan window is the mean job length (5.11 h)** — long enough that 43% of jobs
+are predicted to fit, short enough that a loan is back within a working session.
+The median job is 2 minutes; the mean is pulled up by a long tail.
+
+| Loan window | Person-hours | vs today | Borrowed GPU-h | Ran past the window | Harm |
+|---|---|---|---|---|---|
+| 1 h | 1,284 | −3% | 4,525 | 2,933 | 4.0 h |
+| 2 h | 1,267 | −4% | 7,453 | 2,923 | 4.0 h |
+| **5.11 h (mean job)** | **1,183** | **−11%** | 10,028 | 2,626 | 4.3 h |
+| 12 h | 1,092 | −18% | 15,345 | 2,670 | 4.4 h |
+| 24 h | 995 | −25% | 23,183 | 1,213 | 4.3 h |
+
+**The lender's risk, measured: 4.3 researcher-hours** across 18 weeks, against 1,577
+saved. 28 researchers better off, 6 worse, the worst by 20 hours. The harm barely
+moves with the window, because it is bounded by design rather than by luck.
+
+### The pool's honest weakness
+
+**26% of borrowed GPU-hours ran past the loan window.** By *count* only about 7.5%
+of borrowing jobs overrun, but the rare long ones carry the hours. A production pool
+needs a backstop: borrowed jobs become **preemptible once past the window**, or the
+gate uses a stricter percentile than p90. We did not simulate preemption, so the
+figures above are the pool *without* that protection.
+
+### Verdict
+
+| Idea | Credible? | Why |
+|---|---|---|
+| Forecast quotas weekly from recent demand | **No** | Demand is bursty; 21% under-forecast by 2×; waiting +1,316% |
+| Use the forecast to review quotas quarterly | Yes | Median demand is 2× median quota; 34% of researcher-weeks over-provisioned |
+| Credits pool, gated on requested limits | **No** | Limits over-asked 2,057×; the pool never lends |
+| **Credits pool, gated on predicted runtime, window = mean job length** | **Yes** | −11% (−21% with the idle timeout), harm 4.3 h, risk bounded by design |
+| Elastic quota | Only with preemption | −87% here, but reactive, and this sample cannot test the return-to-busy case |
+
+**Recommended order:** the 1 h idle timeout, then the credits pool, and the elastic
+rule only once preemption exists. The pool is weaker than the elastic rule in this
+sample, and that comparison flatters the elastic rule for the reason the objection
+gives: a bounded loan is safe under load in a way "lift the cap while quiet" is not.
+
+**Same caveats as case 9b:** quotas are inferred, the model reproduces 27% of
+observed person-hours, and the sample understates both the benefit *and* the
+lender's risk.

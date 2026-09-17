@@ -196,6 +196,19 @@ budget from hardware, and throughput regained is not cash saved.
 worse. The fix is the quota, and the idle timeout pays twice: it returns GPU money
 *and* frees the slot an idle job holds against its owner's quota.
 
+**A safer alternative to the elastic quota (case 10).** The elastic rule is
+reactive: it cannot know who is about to come back, and 136 of the jobs it starts
+early run longer than a day. We tested two proposals against it. *Forecasting each
+researcher's quota from their recent demand* fails — demand is too bursty, the
+forecast is 2× too low in 21% of active weeks, and waiting rises 1,316%. *A credits
+pool* — a researcher who is away lends unused quota for a bounded window — works
+once it is gated on **predicted runtime** (the owner's historical p90) rather than
+on requested limits, which are over-asked 2,057×: waiting falls **11%, or 21% with
+the idle timeout**, and lenders were blocked for just **4.3 researcher-hours** in 18
+weeks. It is weaker than the elastic rule here but its risk is bounded by design,
+so our order is: idle timeout, then the pool, and the elastic rule only with
+preemption.
+
 **So the order of operations matters:** reclaim idle allocations first, then cut
 capacity. This sample holds more than 360 of 450 GPUs only 0.6% of the time, and
 never once the never-used allocations are returned. Watch the weekly p95 queue SLO

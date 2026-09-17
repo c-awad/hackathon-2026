@@ -1,0 +1,32 @@
+74,838 jobs, 195 researchers. Jobs with an honest time limit: 58% (the rest request none, so they can never borrow)
+mean job length 5.11 h (median 0.04 h); 98% of jobs have a usable runtime prediction
+forecasting each researcher's quota from their previous two weeks...
+  today's median quota 8 GPUs; forecast median 16
+  the forecast is TIGHTER than today's quota in 34% of researcher-weeks (it hands capacity back rather than only giving it away)
+
+-- policies --
+NOW: fixed quotas                person-h  1,325.8 | >4h  1040 | p95  1.73 | p99   5.35
+Elastic quota under 70%          person-h    167.7 | >4h   378 | p95  0.30 | p99   2.55 | vs now  -87.3%
+Predicted quota (2-week history) person-h 18,766.6 | >4h 25671 | p95 44.80 | p99  89.38 | vs now +1315.5%
+Pool, gated on REQUESTED limit   person-h  1,325.6 | >4h  1040 | p95  1.73 | p99   5.35 | vs now   -0.0% | borrowed       26 GPU-h | harm     0.0 h
+Pool, gated on PREDICTED runtime person-h  1,183.2 | >4h   938 | p95  1.66 | p99   5.01 | vs now  -10.8% | borrowed   10,028 GPU-h | harm     4.3 h
+Pool (predicted) + idle timeout  person-h  1,047.0 | >4h   894 | p95  1.62 | p99   4.81 | vs now  -21.0% | borrowed    9,748 GPU-h | harm     0.0 h
+Reference: no quotas             person-h     67.1 | >4h     6 | p95  0.19 | p99   1.18 | vs now  -94.9%
+
+-- who wins and who loses (person-hours per researcher) --
+  elastic   better   57 | worse    2 | worst single researcher     +0.2 h | net   -20692.9 h
+  predict   better    1 | worse  133 | worst single researcher +84606.0 h | net  +532147.9 h
+  pool      better   28 | worse    6 | worst single researcher    +20.2 h | net    -1576.6 h
+
+-- the pool's risks, measured --
+  borrowed 10,028 GPU-h; of it 2,626 GPU-h (26.2%) ran past the loan window because the runtime prediction was wrong
+  researchers queued under their own quota while the cluster was full and borrowed jobs were running: 4.3 researcher-hours
+
+-- loan window sweep (pool on today's quotas, gated on predicted runtime) --
+  window  1.00h: person-h  1,284.4 ( -3.1%) | borrowed    4,525 GPU-h | overran   2,933 | harm    4.0 h
+  window  2.00h: person-h  1,267.4 ( -4.4%) | borrowed    7,453 GPU-h | overran   2,923 | harm    4.0 h
+  window  5.11h: person-h  1,183.2 (-10.8%) | borrowed   10,028 GPU-h | overran   2,626 | harm    4.3 h
+  window 12.00h: person-h  1,092.1 (-17.6%) | borrowed   15,345 GPU-h | overran   2,670 | harm    4.4 h
+  window 24.00h: person-h    994.7 (-25.0%) | borrowed   23,183 GPU-h | overran   1,213 | harm    4.3 h
+
+wrote analysis/out_case10_policies.csv and analysis/out_case10_loan_sweep.csv
