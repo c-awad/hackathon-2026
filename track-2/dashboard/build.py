@@ -459,16 +459,29 @@ if os.environ.get("DASH_SIM", "1") != "0":
             print(f"  {name:26s} person-hours {pol[name]['person_h']:8,.0f}")
         nocap = sim.summarize("Reference: no quotas at all", sim.run(caps=False))
         base = pol["NOW: quotas as they are"]
-        sweep = []
-        for thr in (0.5, 0.7, 0.9):
-            r = sim.summarize(f"below {thr:.0%}", sim.run(idle_kill_h=1.0, elastic_below=thr))
-            r["threshold"] = thr
-            sweep.append(r)
-        for r in list(pol.values()) + [nocap] + sweep:
+
+        # The interactive grid: every setting the slider can select is a real
+        # replay of all startable jobs, precomputed here. 12 runs, ~5s each.
+        grid = []
+        for kill in (False, True):
+            for thr in (None, 0.5, 0.6, 0.7, 0.8, 0.9):
+                label = ("idle timeout" if kill else "today") if thr is None else \
+                        f"elastic below {thr:.0%}" + (" + idle timeout" if kill else "")
+                r = sim.summarize(label, sim.run(idle_kill_h=1.0 if kill else None,
+                                                 elastic_below=thr))
+                r["threshold"] = thr
+                r["idle_kill"] = kill
+                grid.append(r)
+                print(f"  grid: kill={int(kill)} thr={thr}  person-hours {r['person_h']:8,.0f}")
+        sweep = [r for r in grid if r["idle_kill"] and r["threshold"] in (0.5, 0.7, 0.9)]
+
+        # price every run's waiting as researcher time, and delta against today
+        for r in list(pol.values()) + [nocap] + grid:
             r["usd"] = round(r["person_h"] * USD_ENG, 0)
             r["delta_person_h"] = round(r["person_h"] - base["person_h"], 1)
             r["delta_usd"] = round((r["person_h"] - base["person_h"]) * USD_ENG, 0)
             r["delta_pct"] = round(r["person_h"] / base["person_h"] - 1, 4)
+
         sched = {
             "priced_in": "engineer",
             "jobs_simulated": int(len(sim.j)), "jobs_total": int(sim.n_total),
@@ -478,6 +491,7 @@ if os.environ.get("DASH_SIM", "1") != "0":
                      "median": float(pd.Series(list(sim.caps_user.values())).median())},
             "observed": obs,
             "policies": list(pol.values()), "no_caps": nocap, "sweep": sweep,
+            "grid": grid, "usd_per_engineer_hour": USD_ENG,
             "fidelity": round(base["person_h"] / obs["person_h"], 4),
             "fidelity_total": round(base["total_h"] / obs["total_h"], 4),
             "validation": [

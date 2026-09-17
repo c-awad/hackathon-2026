@@ -179,6 +179,12 @@ concurrency is quantised on a **16 / 32 / 64** ladder.
 | **Both** | **59** | **−96%** |
 | Both + shortest-job-first | 49 | −96% |
 
+**The fix is interactive on the dashboard.** Tile 4 carries a slider for the
+threshold and a toggle for the idle timeout, backed by 12 precomputed full replays,
+so a viewer can move the dial and watch person-hours, jobs over 4 hours, p95, p99
+and the dollar value move with it — and see where the curve stops improving (above
+80% it flattens and slightly reverses, because more jobs start early and compete).
+
 **Reordering the queue buys nothing.** The scheduler is already near-FIFO
 (correlation 0.997) with working backfill — removing backfill makes waiting 26%
 worse. The fix is the quota, and the idle timeout pays twice: it returns GPU money

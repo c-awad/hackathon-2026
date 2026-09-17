@@ -139,6 +139,16 @@
     padding: 7px 10px; font-size: 12.5px; box-shadow: var(--shadow); z-index: 20; max-width: 280px;
   }
   #tip b { font-variant-numeric: tabular-nums; }
+  /* interactive policy dial (tile 4) */
+  .dial { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 12px; background: var(--surface-2); }
+  .dialrow { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; }
+  .dialrow label { font-size: 13px; color: var(--text-secondary); display: flex; gap: 8px; align-items: center; }
+  input[type=range] { width: 260px; accent-color: var(--series-1); }
+  input[type=checkbox] { accent-color: var(--series-1); width: 15px; height: 15px; }
+  .readout { display: flex; flex-wrap: wrap; gap: 26px; margin-top: 16px; align-items: flex-end; }
+  .readout .big { font-size: 38px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
+  .readout .unit { font-size: 13px; color: var(--text-secondary); }
+  .delta { font-size: 13px; font-weight: 600; }
   .pricetag { font-size: 11px; color: var(--text-muted); }
   .pricetag b { color: var(--series-1); }
   .bad { color: var(--critical); }

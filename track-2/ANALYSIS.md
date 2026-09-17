@@ -1322,6 +1322,11 @@ actually busy.
 
 ### Where to set the threshold
 
+**This is interactive on the dashboard** (tile 4, "Try the fix"): a slider over the
+threshold and a toggle for the idle timeout, backed by a 12-run grid — every
+setting is a full replay of all 74,838 startable jobs, precomputed when the page
+builds, so the slider selects between real simulations rather than interpolating.
+
 With the idle timeout on:
 
 | Let users exceed their cap below… | Person-hours | Jobs > 4 h | p99 |
@@ -1332,8 +1337,10 @@ With the idle timeout on:
 | 80% | 29 | 203 | 1.63 h |
 | 90% | 18 | 0 | 1.22 h |
 
-The curve is smooth, so this is a dial rather than a cliff. **70% is the
-conservative choice** — it keeps 30% of the cluster's capacity governed by quota
+The curve is smooth up to 80%, so this is a dial rather than a cliff — but it is
+not monotonic at the top. Without the idle timeout, 80% gives 59 person-hours and
+90% gives 68: past a point, more jobs start early and then compete with each other.
+**70% is the conservative choice** — it keeps 30% of the cluster's capacity governed by quota
 for the busy hours, and still removes 96% of the modelled waiting. Going to 90%
 removes almost all of it but leaves the quota with nothing to do, which is a policy
 decision about fairness rather than a technical one.

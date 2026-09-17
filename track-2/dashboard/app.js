@@ -407,18 +407,7 @@ function render(d) {
           + `tile 2 appears here too &mdash; it returns GPU money <i>and</i> shortens the queue, because an idle `
           + `job holds a slot against its owner's quota.` }),
       ]),
-      el("div", { style: "margin-top:18px" }, [
-        el("h3", { text: "4. Where to set the dial" }),
-        el("p", { class: "meta", text: "Let a researcher exceed their quota while the cluster is below this "
-          + "much allocated. Those extra jobs should be preemptible, so the quota reasserts itself the moment "
-          + "the machine gets busy." }),
-        bars(sc.sweep.map((r) => ({ label: `below ${(r.threshold * 100).toFixed(0)}% allocated`, usd: r.person_h,
-                                    note: `${num(r.over_4h)} jobs still wait over 4h` })),
-          { aria: "person-hours by elastic threshold", fmt: (v) => num(v) + " h", labelW: 230 }),
-        el("p", { class: "note", html: `Smooth curve, no cliff &mdash; this is a policy dial. <b>70% is the `
-          + `conservative setting</b>: a third of the cluster stays governed by quota for genuinely busy hours, `
-          + `and the waiting still falls ${Math.abs(best.delta_pct * 100).toFixed(0)}%.` }),
-      ]),
+      dial(sc, nowRow),
       el("p", { class: "risk", style: "margin-top:16px",
         html: `<b>If we are wrong:</b> the quotas exist to stop one researcher taking the cluster in a busy `
           + `week, and we simulated the extra jobs as ordinary ones &mdash; with preemption, some of that work `
@@ -499,6 +488,83 @@ function render(d) {
     + ` Full working, case by case, in <code>track-2/ANALYSIS.md</code>; machine-readable numbers in <code>claims.json</code>.`;
 
   /* (controls are wired once, in controls()) */
+}
+
+/* ------------------------------------------------- tile 4: the policy dial */
+/* Each setting is a precomputed full replay of every startable job -- the slider
+   selects between real simulation runs, it does not interpolate. */
+function dial(sc, nowRow) {
+  const THRS = [null, 0.5, 0.6, 0.7, 0.8, 0.9];
+  const pick = (thr, kill) => sc.grid.find((r) => r.threshold === thr && r.idle_kill === kill);
+  let idx = 3, kill = true;                 // opens on our recommendation: 70% + timeout
+
+  const slider = el("input", { type: "range", min: 0, max: THRS.length - 1, step: 1, value: idx,
+                               "aria-label": "allocation threshold below which quotas are lifted" });
+  const box = el("input", { type: "checkbox", id: "killbox" });
+  box.checked = kill;
+  const thrLabel = el("span", { class: "mono", style: "color:var(--text-primary)" });
+  const out = el("div", { class: "readout" });
+  const chart = el("div", { style: "margin-top:14px" });
+  const note = el("p", { class: "note" });
+
+  function paint() {
+    const thr = THRS[idx];
+    const r = pick(thr, kill) || nowRow;
+    const today = pick(null, false);
+    const saved = today.person_h - r.person_h;
+    thrLabel.textContent = thr === null ? "off — quotas always enforced" : `below ${(thr * 100).toFixed(0)}% allocated`;
+    out.innerHTML = "";
+    out.append(
+      el("div", {}, [
+        el("div", { class: "big", text: num(r.person_h) + " h" }),
+        el("div", { class: "unit", text: "person-hours researchers spend waiting" }),
+      ]),
+      el("div", {}, [
+        el("div", { class: "delta " + (saved > 0 ? "ok" : saved < 0 ? "bad" : ""),
+                    text: saved === 0 ? "no change" : `${saved > 0 ? "−" : "+"}${pct(Math.abs(saved) / today.person_h)} vs today` }),
+        el("div", { class: "unit", html: `${saved >= 0 ? "saves" : "costs"} <b>${usdFull(Math.abs(saved) * sc.usd_per_engineer_hour)}</b> of researcher time` }),
+      ]),
+      el("div", {}, [el("div", { class: "delta", text: num(r.over_4h) }), el("div", { class: "unit", text: "jobs still wait over 4 h" })]),
+      el("div", {}, [el("div", { class: "delta", text: r.p95_h + " h" }), el("div", { class: "unit", text: "p95 wait" })]),
+      el("div", {}, [el("div", { class: "delta", text: r.p99_h + " h" }), el("div", { class: "unit", text: "p99 wait" })]),
+    );
+    chart.innerHTML = "";
+    chart.appendChild(bars([
+      { label: "Today", usd: today.person_h, note: "quotas always enforced" },
+      { label: "This setting", usd: r.person_h, note: thrLabel.textContent + (kill ? ", with the idle timeout" : "") },
+      { label: "No quotas at all (reference)", usd: sc.no_caps.person_h, dim: true, note: "what removing the ceiling entirely would give" },
+    ], { aria: "person-hours waiting under the chosen policy", fmt: (v) => num(v) + " h", labelW: 250 }));
+    note.innerHTML = thr !== null && thr >= 0.8
+      ? `Above 80% the curve flattens and wobbles &mdash; ${num(pick(0.8, kill).person_h)} h at 80% against `
+        + `${num(pick(0.9, kill).person_h)} h at 90% &mdash; because more jobs start early and then compete with `
+        + `each other. <b>70% is the setting we would ship</b>: a third of the cluster stays governed by quota `
+        + `for genuinely busy hours.`
+      : `<b>70% with the idle timeout is the setting we would ship.</b> Lower thresholds leave researchers `
+        + `waiting; higher ones leave the quota with almost nothing to do, which is a fairness decision rather `
+        + `than a technical one.`;
+  }
+
+  slider.addEventListener("input", () => { idx = +slider.value; paint(); });
+  box.addEventListener("change", () => { kill = box.checked; paint(); });
+  paint();
+
+  return el("div", { style: "margin-top:18px" }, [
+    el("h3", { text: "4. Try the fix" }),
+    el("p", { class: "meta", text: "Let a researcher exceed their own quota while the cluster is quiet. "
+      + "Those extra jobs would be preemptible, so the quota reasserts itself the moment the machine gets busy." }),
+    el("div", { class: "dial" }, [
+      el("div", { class: "dialrow" }, [
+        el("label", {}, [el("span", { text: "Lift quotas:" }), slider, thrLabel]),
+        el("label", { for: "killbox" }, [box, el("span", { text: "also end allocations idle for 1 h" })]),
+      ]),
+      out,
+      chart,
+      note,
+    ]),
+    el("p", { class: "note", html: `Every setting on that slider is a <b>full replay of all `
+      + `${num(sc.jobs_simulated)} startable jobs</b> at ${sc.gpus} GPUs, computed when this page was built `
+      + `(12 simulations). The slider selects between real runs &mdash; it does not interpolate.` }),
+  ]);
 }
 
 function controls() {
