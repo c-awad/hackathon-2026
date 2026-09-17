@@ -392,18 +392,23 @@ let reportBuilt = false;
 
 function wireReport() {
   $("report-btn").addEventListener("click", openReport);
+  $("email-btn").addEventListener("click", emailReport);
+  $("report-email").addEventListener("click", emailReport);
   $("report-close").addEventListener("click", () => { closeReport(); showTile(activeTile); });
   $("report-print").addEventListener("click", () => window.print());
   $("report-md").addEventListener("click", downloadMarkdown);
 }
 
+function ensureReport() {
+  if (reportBuilt) return;
+  $("report-btn").textContent = "Building report\u2026";
+  buildReport();
+  reportBuilt = true;
+  $("report-btn").textContent = "Full report";
+}
+
 function openReport() {
-  if (!reportBuilt) {
-    $("report-btn").textContent = "Building report\u2026";
-    buildReport();
-    reportBuilt = true;
-    $("report-btn").textContent = "Full report";
-  }
+  ensureReport();
   TILES.forEach((id) => $(id).setAttribute("hidden", ""));
   $("tabs").setAttribute("hidden", "");
   $("report").removeAttribute("hidden");
@@ -721,6 +726,7 @@ function nodeTable(rows) {
 
 /* --------------------------------------------------------- markdown download */
 function downloadMarkdown() {
+  ensureReport();
   const blob = new Blob([reportMarkdown()], { type: "text/markdown" });
   const a = el("a");
   a.href = URL.createObjectURL(blob);
@@ -729,6 +735,43 @@ function downloadMarkdown() {
   a.click();
   a.remove();
   URL.revokeObjectURL(a.href);
+}
+
+/* Mail clients cap body length, so the draft is the briefing a CFO would send;
+   the full workings download as gpu-spend-report.md for them to attach. */
+function emailBriefing() {
+  const m = D.meta, t1 = D.tile1, t2 = D.tile2, t3 = D.tile3;
+  return [
+    `${m.title}. ${m.subtitle}`,
+    "",
+    "Headlines",
+    ...[t1, t2, t3].flatMap((t) => t.kpis.map((k) => `- ${k.value} ${k.label} (${k.sub})`)),
+    "",
+    "Proposed actions",
+    ...t2.ranked.map((r) => `- ${usd(r.usd)}: ${r.action} (${r.confidence} confidence)`),
+    "",
+    "If we are wrong",
+    ...t3.risks.map((r) => `- ${r.level}: ${r.claim} (${r.amount})`),
+    "",
+    m.caveat,
+    "",
+    "Full analysis is in gpu-spend-report.md, which downloaded with this draft. Attach it before sending.",
+  ].join("\n");
+}
+
+function emailReport() {
+  ensureReport();
+  downloadMarkdown();
+  const cut = D.tile2.kpis[0].value;
+  const spent = D.tile1.kpis[0].value;
+  const href = "mailto:?subject=" +
+    encodeURIComponent(`${D.meta.title}: ${cut} recoverable of ${spent}`) +
+    "&body=" + encodeURIComponent(emailBriefing());
+  const a = el("a");
+  a.href = href;
+  document.body.append(a);
+  a.click();
+  a.remove();
 }
 
 function reportMarkdown() {
