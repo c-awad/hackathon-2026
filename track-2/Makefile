@@ -28,4 +28,4 @@ mcp: ## run the MCP server for an agent client (needs uv + prep/generate)
 	uv run --with-requirements requirements.lock.txt --with fastmcp python -m mcp_layer.server
 
 validate: ## check your claims.json before submitting: make validate CLAIMS=claims.json
-	python scripts/validate_submission.py --claims $(or $(CLAIMS),claims.json) $(if $(URL),--url $(URL),)
+	python scripts/validate_submission.py --claims $(or $(CLAIMS),../claims.json) $(if $(URL),--url $(URL),)

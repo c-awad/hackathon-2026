@@ -170,5 +170,5 @@ claims = {
         "every figure describes the sample. The storage incident is the corpus's one synthetic "
         "scenario; everything else is computed from real telemetry."),
 }
-json.dump(claims, open("claims.json", "w"), indent=1)
-print(f"wrote claims.json  ({len(triage)} node_triage entries)")
+json.dump(claims, open("../claims.json", "w"), indent=1)   # repository root
+print(f"wrote ../claims.json  ({len(triage)} node_triage entries)")

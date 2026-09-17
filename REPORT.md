@@ -3,11 +3,11 @@
 **The dashboard is the deliverable.** `docker compose up`, then
 **http://localhost:3000**. This report is the argument behind it.
 
-- [`ANALYSIS.md`](ANALYSIS.md) — the working, case by case (1 to 9b)
-- [`API_ANALYSIS.md`](API_ANALYSIS.md) — every MantisGrid endpoint reviewed, and
+- [`ANALYSIS.md`](track-2/ANALYSIS.md) — the working, case by case (1 to 9b)
+- [`API_ANALYSIS.md`](track-2/API_ANALYSIS.md) — every MantisGrid endpoint reviewed, and
   three bugs
 - [`claims.json`](claims.json) — the numbers, machine-readable
-- `analysis/` — a script per case; every figure in this report is reproducible
+- `track-2/analysis/` — a script per case; every figure in this report is reproducible
 
 ---
 

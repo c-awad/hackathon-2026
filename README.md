@@ -2,13 +2,14 @@
 
 **Cluster efficiency: where to cut $1.49M of GPU spend, and what not to touch.**
 
-Everything for this submission lives in [`track-2/`](track-2/).
+`docker-compose.yml`, `claims.json` and `REPORT.md` are here at the repository root, as the
+brief asks. The project itself lives in [`track-2/`](track-2/).
 
 | | |
 |---|---|
-| **The dashboard** | `cd track-2 && docker compose up` → **http://localhost:3000** (five tabs; the same data as one long page at `/classic/`) |
-| **The report** | [`track-2/REPORT.md`](track-2/REPORT.md) |
-| **The claims** | [`track-2/claims.json`](track-2/claims.json) |
+| **The dashboard** | `docker compose up` (from the repository root) → **http://localhost:3000** (five tabs; the same data as one long page at `/classic/`) |
+| **The report** | [`REPORT.md`](REPORT.md) |
+| **The claims** | [`claims.json`](claims.json) |
 | **The working** | [`track-2/ANALYSIS.md`](track-2/ANALYSIS.md) — case by case, 1 to 9b |
 | **The API review** | [`track-2/API_ANALYSIS.md`](track-2/API_ANALYSIS.md) — every endpoint, and three bugs |
 | **The scripts** | [`track-2/analysis/`](track-2/analysis/) — one per case, plus the scheduler simulator |
@@ -26,8 +27,8 @@ curl -O https://mantisgrid-hackathon.s3.us-east-1.amazonaws.com/track-2-raw.zip
 unzip track-2-raw.zip -d data/raw
 make prep && make generate && make check-data     # prints "Your data matches."
 
-# 2. bring it up
-docker compose up                                  # API on :8000, dashboard on :3000
+# 2. bring it up, from the repository root
+cd .. && docker compose up                                  # API on :8000, dashboard on :3000
 ```
 
 The dashboard builds its data on startup by running the analysis over
@@ -36,7 +37,7 @@ first start is slow; set `DASH_SIM=0` to skip it). It serves `:3000` and proxies
 because the API sends no CORS headers and the price control is a real API call.
 
 ```bash
-make validate CLAIMS=claims.json URL=http://localhost:3000   # check before submitting
+make validate URL=http://localhost:3000                     # from track-2/; checks ../claims.json
 make mcp-demo                                                # drive the MCP server
 python3 analysis/case2_recoverable.py                        # any single case
 ```
