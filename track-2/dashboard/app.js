@@ -401,13 +401,14 @@ function render(d) {
           { h: "vs today", f: (r) => r.delta_pct ? (r.delta_pct * 100).toFixed(0) + "%" : "—" },
           { h: "Jobs over 4h", f: (r) => num(r.over_4h) }, { h: "p95", f: (r) => r.p95_h + " h" },
           { h: "p99", f: (r) => r.p99_h + " h" },
-          { h: "Researcher time at $95/h", f: (r) => usdFull(r.usd) }]),
-        el("p", { class: "meta", html: `<b>The fix is worth ${usdFull(Math.abs(best.delta_usd))} of researcher `
-          + `time</b> and costs no capacity: it hands out cards that are already idle. The idle timeout from `
+          { h: "Researcher time, at most (at $95/h)", f: (r) => usdFull(r.usd) }]),
+        el("p", { class: "meta", html: `<b>The fix returns ${num(Math.abs(best.delta_person_h))} person-hours `
+          + `of researcher time</b> &mdash; up to ${usdFull(Math.abs(best.delta_usd))} if that waiting is fully `
+          + `blocking &mdash; and costs no capacity: it hands out cards that are already idle. The idle timeout from `
           + `tile 2 appears here too &mdash; it returns GPU money <i>and</i> shortens the queue, because an idle `
           + `job holds a slot against its owner's quota.` }),
       ]),
-      dial(sc, nowRow),
+      dial(sc, nowRow, rec),
       el("p", { class: "risk", style: "margin-top:16px",
         html: `<b>If we are wrong:</b> the quotas exist to stop one researcher taking the cluster in a busy `
           + `week, and we simulated the extra jobs as ordinary ones &mdash; with preemption, some of that work `
@@ -493,7 +494,7 @@ function render(d) {
 /* ------------------------------------------------- tile 4: the policy dial */
 /* Each setting is a precomputed full replay of every startable job -- the slider
    selects between real simulation runs, it does not interpolate. */
-function dial(sc, nowRow) {
+function dial(sc, nowRow, rec) {
   const THRS = [null, 0.5, 0.6, 0.7, 0.8, 0.9];
   const pick = (thr, kill) => sc.grid.find((r) => r.threshold === thr && r.idle_kill === kill);
   let idx = 3, kill = true;                 // opens on our recommendation: 70% + timeout
@@ -522,7 +523,9 @@ function dial(sc, nowRow) {
       el("div", {}, [
         el("div", { class: "delta " + (saved > 0 ? "ok" : saved < 0 ? "bad" : ""),
                     text: saved === 0 ? "no change" : `${saved > 0 ? "−" : "+"}${pct(Math.abs(saved) / today.person_h)} vs today` }),
-        el("div", { class: "unit", html: `${saved >= 0 ? "saves" : "costs"} <b>${usdFull(Math.abs(saved) * sc.usd_per_engineer_hour)}</b> of researcher time` }),
+        el("div", { class: "unit", html: `worth ${saved >= 0 ? "up to" : "minus"} `
+          + `<b>${usdFull(Math.abs(saved) * sc.usd_per_engineer_hour)}</b> if that waiting fully blocks `
+          + `the researcher` }),
       ]),
       el("div", {}, [el("div", { class: "delta", text: num(r.over_4h) }), el("div", { class: "unit", text: "jobs still wait over 4 h" })]),
       el("div", {}, [el("div", { class: "delta", text: r.p95_h + " h" }), el("div", { class: "unit", text: "p95 wait" })]),
@@ -561,6 +564,13 @@ function dial(sc, nowRow) {
       chart,
       note,
     ]),
+    el("p", { class: "note", html: `<b>Hours are the honest unit here.</b> The dollar figure prices waiting at `
+      + `the price book's $${sc.usd_per_engineer_hour}/engineer-hour and so assumes the wait fully blocks the `
+      + `person &mdash; the same assumption we argue against in <code>/v1/queue/latency</code> (tile 3). A `
+      + `researcher waiting on a batch job usually works on something else, and nothing in this data measures `
+      + `how much. It is an upper bound, and it is <b>not added to the `
+      + `${usd(rec.point_usd)} of GPU savings</b>: that is cash you stop spending, this is throughput you get `
+      + `back.` }),
     el("p", { class: "note", html: `Every setting on that slider is a <b>full replay of all `
       + `${num(sc.jobs_simulated)} startable jobs</b> at ${sc.gpus} GPUs, computed when this page was built `
       + `(12 simulations). The slider selects between real runs &mdash; it does not interpolate.` }),

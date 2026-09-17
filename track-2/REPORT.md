@@ -19,7 +19,7 @@
 | **Recoverable** | **$359K** (range $202K–$491K), 24% of capacity |
 | **The 20% target** | $297K — the point estimate clears it, the low end does not |
 | **Machines to drain** | **one** (not the 121 the findings suggest, not the 5 the API recommends) |
-| **Queue** | a quota problem, not a capacity one; fixable for **$120K** of researcher time at no capacity cost |
+| **Queue** | a quota problem, not a capacity one; fixable for **1,267 person-hours** (up to $120K if fully blocking) at no capacity cost |
 
 **The one-line version for the CFO:** *most of the recoverable money is GPUs nobody
 was using — not machines to switch off and not people to chase.*
@@ -185,6 +185,12 @@ so a viewer can move the dial and watch person-hours, jobs over 4 hours, p95, p9
 and the dollar value move with it — and see where the curve stops improving (above
 80% it flattens and slightly reverses, because more jobs start early and compete).
 
+**We report this in hours, not dollars.** The $95/engineer-hour conversion assumes
+waiting fully blocks the person, which is the assumption we argue against in
+`/v1/queue/latency`; the dashboard shows the dollar figure as an upper bound beside
+the hours and never adds it to the $359K of GPU savings. Salary is a different
+budget from hardware, and throughput regained is not cash saved.
+
 **Reordering the queue buys nothing.** The scheduler is already near-FIFO
 (correlation 0.997) with working backfill — removing backfill makes waiting 26%
 worse. The fix is the quota, and the idle timeout pays twice: it returns GPU money
@@ -221,7 +227,7 @@ after any cut and treat a new breach week as the signal to stop.
   concurrency, not read from Slurm. The reference runs (double every quota: −90%;
   no quotas: −95%) show the direction holds even if the values move.
 - **The queue model understates.** It reproduces 27% of observed person-hours; the
-  rest is work outside this sample, so the $120K is a floor.
+  rest is work outside this sample, so the 1,267 person-hours is a floor.
 - **This is a sample.** MIT publishes it as a four-month sample of the cluster's
   jobs and says it is not appropriate for estimating system utilisation. Every
   figure here describes the sample. The storage incident is the corpus's one
@@ -268,6 +274,10 @@ itself.
 # data/ first -- see data/README.md, steps 1-4 (make prep, make generate, make check-data)
 docker compose up          # API on :8000, dashboard on :3000
 ```
+
+The dashboard runs its own analysis at startup, including the 13 scheduler
+simulations behind tile 4 — about 90 seconds on a laptop, so the first start is
+slow. `DASH_SIM=0` skips the simulation and drops tile 4.
 
 Then the analysis, any single case:
 

@@ -1309,10 +1309,16 @@ with the idle timeout it removes **96%**. Reordering (OPT 4) adds almost nothing
 once the cap is elastic — the same conclusion as case 9, now measured under a model
 that reproduces 40% of reality instead of 1%.
 
-**Priced at $95 an engineer-hour**, OPT 3 is worth **$120,000** of the waiting the
-model reproduces. Scaled to the full observed waiting it would be larger, but that
+**Hours are the honest unit.** OPT 3 returns **1,267 person-hours**. Priced at the
+price book's $95 an engineer-hour that is **up to $120,000**, but the conversion
+assumes the wait fully blocks the person — the same assumption we argue against in
+`/v1/queue/latency` (case 8), where the rule catalogue's own text says *"nobody sits
+watching a scheduler"*. A researcher waiting on a batch job usually works on
+something else, and nothing here measures how much. **We do not add it to the $359K
+of GPU savings**: that is cash you stop spending, this is throughput you get back. Scaled to the full observed waiting it would be larger, but that
 scaling is not something this data can verify, so the defensible claim is: *at
-least $120K of researcher time, and the model understates it.*
+least 1,267 person-hours of researcher time — up to $120K if that waiting fully
+blocks the person — and the model understates it.*
 
 **Reference rows are the sanity check.** Doubling every cap (-90%) and removing
 caps entirely (-95%) both land near the elastic result, which confirms the
@@ -1366,4 +1372,6 @@ decision about fairness rather than a technical one.
 > Modelling every job with the real quotas in place, 96% of the waiting comes from
 > researchers hitting their own cap while the cluster is two-thirds idle. Lifting
 > the cap only while the machine is quiet, plus the idle timeout, removes it —
-> worth at least $120K of researcher time, and it costs no capacity.
+> 1,267 person-hours handed back to researchers, and it costs no capacity. (Worth up
+> to $120K if that waiting fully blocks them; we report the hours, because that
+> conversion is the one we argue against in `/v1/queue/latency`.)

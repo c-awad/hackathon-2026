@@ -31,8 +31,8 @@ docker compose up                                  # API on :8000, dashboard on 
 ```
 
 The dashboard builds its data on startup by running the analysis over
-`data/prepped/`, including the scheduler simulation (about 40 seconds; set
-`DASH_SIM=0` to skip). It serves `:3000` and proxies `/api/*` to the API service,
+`data/prepped/`, including 13 runs of the scheduler simulation (about 90 seconds on a laptop, so the
+first start is slow; set `DASH_SIM=0` to skip it). It serves `:3000` and proxies `/api/*` to the API service,
 because the API sends no CORS headers and the price control is a real API call.
 
 ```bash
@@ -54,7 +54,8 @@ python3 analysis/case2_recoverable.py                        # any single case
 - **The queue is a quota problem, not a capacity one.** In 90% of waits over an
   hour the researcher was already at their own concurrency cap while a median 287 of
   450 GPUs sat free. An elastic quota plus an idle timeout removes 96% of the
-  modelled waiting — about $120K of researcher time, at no capacity cost.
+  modelled waiting: **1,267 person-hours** returned to researchers (up to $120K if
+  that waiting fully blocks them), at no capacity cost.
 - **Three API bugs**, with file and line, in `track-2/API_ANALYSIS.md`.
 
 ## AI models, assistants and frameworks we used
