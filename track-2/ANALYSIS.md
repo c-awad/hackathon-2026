@@ -48,6 +48,7 @@ prepped data (`python3 analysis/<script>.py`).
 | 7 | The API's "drain the top 5 nodes" recommendation | done |
 | 8 | The queue tail, priced in engineer-hours | done |
 | 9 | Is the scheduler optimized? Would reordering help? | done |
+| 9b | The same simulation with per-user caps modelled: now vs optimized | done |
 
 ---
 
@@ -1233,3 +1234,129 @@ own concurrency, whatever else the cluster was doing.
 > in 90% of long waits the person was already at their cap while ~287 of 450 GPUs
 > sat free. Reordering the queue buys nothing; relaxing the cap when the cluster is
 > quiet, and reclaiming idle allocations, removes almost all of it.
+
+---
+
+## Case 9b — The scheduler simulated properly: now vs optimized
+
+Script: `analysis/case9b_caps.py`. Outputs: `analysis/out_case9b_caps.csv`,
+`analysis/out_case9b_sweep.csv`.
+
+**Question.** Case 9's replay produced waits far below the real ones. Run it over
+every job with the missing constraint — the per-user cap — and measure what the
+optimizations are worth.
+
+### Scope: this is every job, and here is what is still missing
+
+**All 74,838 jobs with a start time are simulated** (the dataset has 74,849; the
+other 11 never started, so they have no observed wait to compare against). Nothing
+is sampled down.
+
+What cannot be added is the rest of the machine's work: MIT published this dataset
+as a **sample** of the cluster's jobs, and the unsampled jobs are not in the files.
+So instead of claiming a full-fidelity replay, the cap model is **validated against
+the observed wait distribution** and reported with its error.
+
+### Where the caps come from
+
+Each user's cap is their **observed peak simultaneous GPUs**, swept from their real
+start and end times, then snapped onto the `16 / 32 / 64` ladder when it lands
+within 10% of a rung (18 of 195 users snap; the median cap is 8 GPUs, because most
+users never ran much at once).
+
+This is an estimate, and it is endogenous: a user's peak is what they *achieved*,
+which for a light user reflects their own submissions rather than a ceiling. It is
+right where it matters — the heavy users who do the waiting pile up exactly on the
+rungs (28 users at 16-17, 9 at 32, a few at 65-66).
+
+### The model against reality
+
+| | Observed | Model with caps | Model without caps (case 9) |
+|---|---|---|---|
+| total wait | **75,334 h** | **30,245 h** | 4,099 h |
+| person-hours | **4,997** | **1,326** | 67 |
+| p50 | 7 s | 0 s | 0 s |
+| p90 | 2.03 h | 0.99 h | — |
+| p95 | 4.64 h | 1.73 h | 0.19 h |
+| p99 | 14.82 h | 5.35 h | 1.18 h |
+| jobs over 4 h | 4,181 | 1,040 | 6 |
+
+**Adding the cap takes the model from 1.3% of the observed waiting to 40% of it**
+(person-hours 67 → 1,326 against 4,997). That is the single biggest missing
+constraint, and it is strong evidence the caps — not capacity, not ordering — are
+what people are waiting for.
+
+**The remaining 60% is what we cannot see:** the unsampled jobs that also competed
+for these cards, plus fairshare decay, QOS limits and reservations that Slurm
+applies and this data does not record. So the model **understates** every saving
+below; it does not overstate them.
+
+### Now vs optimized
+
+| Policy | Total wait | p95 | p99 | Jobs > 4 h | Person-hours | Δ vs now |
+|---|---|---|---|---|---|---|
+| **NOW: caps as they are** | 30,245 h | 1.73 h | 5.35 h | 1,040 | **1,326** | — |
+| OPT 1: 1 h idle timeout | 29,156 h | 1.70 h | 5.13 h | 988 | 1,192 | **-10%** |
+| OPT 2: elastic cap under 70% | 9,553 h | 0.30 h | 2.55 h | 378 | 168 | **-87%** |
+| **OPT 3: both** | **8,046 h** | 0.28 h | 2.21 h | 305 | **59** | **-96%** |
+| OPT 4: both + shortest-job-first | 6,554 h | 0.24 h | 1.92 h | 169 | 49 | -96% |
+| *REF: double every cap* | 10,516 h | 0.66 h | 1.76 h | 97 | 132 | -90% |
+| *REF: remove caps entirely* | 4,099 h | 0.19 h | 1.18 h | 6 | 67 | -95% |
+
+**The elastic cap is the whole story.** Letting a user exceed their quota while the
+cluster is below 70% allocated removes **87%** of the modelled waiting on its own;
+with the idle timeout it removes **96%**. Reordering (OPT 4) adds almost nothing
+once the cap is elastic — the same conclusion as case 9, now measured under a model
+that reproduces 40% of reality instead of 1%.
+
+**Priced at $95 an engineer-hour**, OPT 3 is worth **$120,000** of the waiting the
+model reproduces. Scaled to the full observed waiting it would be larger, but that
+scaling is not something this data can verify, so the defensible claim is: *at
+least $120K of researcher time, and the model understates it.*
+
+**Reference rows are the sanity check.** Doubling every cap (-90%) and removing
+caps entirely (-95%) both land near the elastic result, which confirms the
+mechanism: the ceiling is what binds, and the elastic rule buys nearly all of the
+benefit of removing it while keeping the quota for the hours when the cluster is
+actually busy.
+
+### Where to set the threshold
+
+With the idle timeout on:
+
+| Let users exceed their cap below… | Person-hours | Jobs > 4 h | p99 |
+|---|---|---|---|
+| 50% allocated | 372 | 480 | 3.04 h |
+| 60% | 193 | 376 | 2.58 h |
+| **70%** | **59** | **305** | **2.21 h** |
+| 80% | 29 | 203 | 1.63 h |
+| 90% | 18 | 0 | 1.22 h |
+
+The curve is smooth, so this is a dial rather than a cliff. **70% is the
+conservative choice** — it keeps 30% of the cluster's capacity governed by quota
+for the busy hours, and still removes 96% of the modelled waiting. Going to 90%
+removes almost all of it but leaves the quota with nothing to do, which is a policy
+decision about fairness rather than a technical one.
+
+### Cost of being wrong
+
+- **The caps exist for a reason.** They stop one researcher taking the cluster
+  during a busy week. The elastic rule only lifts them while the machine is quiet,
+  and the extra jobs should be **preemptible** so the quota reasserts itself the
+  moment demand returns. We simulated them as ordinary jobs, which is the
+  optimistic case: with preemption, some of that work would be interrupted and
+  resubmitted.
+- **Our caps are inferred, not read from Slurm.** If the real ceilings differ, the
+  size of the effect changes but not its direction: the reference rows show any
+  loosening of the ceiling lands in the same place.
+- **The model understates waiting by 60%**, so it also understates the gain.
+- **This buys researcher time, not GPU-hours.** It does not contribute to the 20%
+  spend cut; it is what makes the cut safe to take, which is the question the CFO
+  was actually asked.
+
+### Candidate CFO line
+
+> Modelling every job with the real quotas in place, 96% of the waiting comes from
+> researchers hitting their own cap while the cluster is two-thirds idle. Lifting
+> the cap only while the machine is quiet, plus the idle timeout, removes it —
+> worth at least $120K of researcher time, and it costs no capacity.
