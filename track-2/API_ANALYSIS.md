@@ -336,6 +336,72 @@ a list of machines to switch off.**
 
 ---
 
+# What we used, and what we haven't
+
+Audited by grepping every call out of `analysis/*.py` and `dashboard/build.py`, so
+this is what the code does, not what we remember writing.
+
+## Endpoints, and what each one is doing for us
+
+| Endpoint | Where it runs | What it does for us |
+|---|---|---|
+| `POST /v1/causal` | `dashboard/build.py` (**live, on the page**), `case4_storage.py`, `api_review.py` | The spine of tile 3. Resolves the 121 storage findings to one volume, and an array's task failures to the array at 1.0 with its machines at 0.136 — the API's own rebuttal of its drain recommendation |
+| `GET /v1/recommendations` | `dashboard/build.py`, `case7_drain_rec.py`, `api_review.py` | Quoted verbatim on the page (the $57,226 claim), then rebutted line by line |
+| `GET /v1/resources/underperforming` | `dashboard/build.py`, `case7_drain_rec.py`, `api_review.py` | Supplies *which* five machines the page argues about, so we rebut the API's own list rather than one we chose |
+| `GET /v1/price-book` | `dashboard/build.py`, `api_review.py` | Every dollar on the dashboard: $2.50/GPU-hour, $95/engineer-hour, and `epoch_offset` for dates |
+| `POST /v1/events/findings` | `dashboard/build.py` (by `detector_id`), `api_review.py` | The finding ids in each drill-down, so an SRE can go from a dollar figure to the detector's own records |
+| `GET /v1/efficiency/summary` | `dashboard/build.py`, `api_review.py` | Cross-check on the waterfall; it matched our recomputation to the hour, so we ship its shape |
+| `GET /v1/waste/breakdown` | `dashboard/build.py`, `api_review.py` | The outcome split behind tile 1, and the CANCELLED argument in tile 3 |
+| `GET /v1/queue/latency` | `dashboard/build.py`, `case8_queue.py`, `api_review.py` | The percentiles, and the $9.33M figure tile 3 corrects |
+| `GET /v1/policies/rules` | `dashboard/build.py`, `api_review.py` | The "what we checked and ruled out" block: the PCIe rule that never fired |
+| `GET /v1/scaling/efficiency` | `api_review.py` only | Reviewed and **not used on the page**: it is row-weighted, and we recomputed hour-weighted from `jobs.parquet` instead |
+| `POST /v1/neighbor` | `api_review.py` only | Reviewed; case 4 walked `edges.parquet` directly instead, which is how we found the 159-vs-121 machine gap and the 500-node cap |
+| `POST /v1/detect/{integration_id}` | `api_review.py` only | Reviewed as a health check; nothing on the page needs it |
+
+**Nine of the twelve endpoints feed the dashboard.** The three that don't were each
+reviewed and rejected for a stated reason, which is itself a finding rather than an
+omission.
+
+## Parameters and filters we have not exercised
+
+| Not used | Why it matters |
+|---|---|
+| **`usd_per_gpu_hour` / `usd_per_engineer_hour` overrides** | Tested in `api_review.py`, but the dashboard has no price control. A CFO modelling a different rate is exactly the use case, and the response even re-tags itself `2026-Q3+custom` so a price change reads differently from an infrastructure change |
+| **`category` filter on findings** | We filter by `detector_id` only. `PERFORMANCE` / `AVAILABILITY` / `COST` is the natural grouping for a business view |
+| **`offset` / `limit` paging** | We never page, which is why the 100-result cap went unnoticed until this review |
+| **`hop_count` > 1 on neighbor** | Used once, in the review, and that is where the truncation bug showed up |
+| **`entity_type=user` on underperforming** | Called, but deliberately not shown: it ranks people, and the brief warns a dashboard ranking employees by waste is a hostile dashboard |
+
+## The `mcp_layer/` MCP server — not used at all
+
+`mcp_layer/server.py` exposes the same API as **13 hand-written tools** for an LLM
+agent (`health`, `list_findings`, `causal`, `neighbor`, `detect`, `list_rules`,
+`price_book`, `efficiency_summary`, `waste_breakdown`, `queue_latency`,
+`scaling_efficiency`, `underperforming`, `recommendations`), with docstrings that
+teach an agent the `fact` / `judgment` distinction and when to validate a judgment
+against `causal`.
+
+**We have not run it, and nothing we built uses it.** Everything above is plain
+HTTP from Python. This is the clearest gap in our submission against the stated
+judging focus, which names *"use of the MantisGrid AI API **and its MCP tools**"*.
+
+Two honest options, in the time available:
+
+1. **Run it and show it.** `make mcp` needs `uv` (not currently installed here), and
+   an agent client pointed at `track-2/`. The demo that would earn the credit is an
+   agent asked "where should we cut GPU spend, and what should we not do?", watched
+   as it calls `recommendations`, then `causal`, and changes its answer.
+2. **Say we didn't.** The analysis stands on its own, and an unused server is
+   better admitted than implied.
+
+What the MCP layer would add over our HTTP calls is not new data — it is the same
+endpoints — but it is the natural home for the one workflow we automated by hand:
+**never present a `judgment` without first passing it through `causal`.** That rule
+is what separates our tile 3 from the API's own recommendation, and it belongs in a
+tool description rather than in our heads.
+
+---
+
 ## How to reproduce this
 
 ```bash
