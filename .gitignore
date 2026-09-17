@@ -11,5 +11,14 @@ __pycache__/
 .venv/
 .ipynb_checkpoints/
 .DS_Store
-claims.json
 out/
+
+# Secrets -- never commit
+.env
+.env.*
+
+# Downloaded raw data archive
+track-2-raw.zip
+
+# IDE
+.idea/
