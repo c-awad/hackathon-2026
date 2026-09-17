@@ -16,6 +16,23 @@ services:
       timeout: 3s
       retries: 12
 
+  # The dashboard the judges open: http://localhost:3000
+  # It builds dashboard/data.json from ./data on startup, then serves the page.
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    ports: ["3000:3000"]
+    volumes:
+      - ./data:/app/data:ro
+      - ./dashboard:/app/dashboard
+      - ./analysis:/app/analysis:ro
+    environment:
+      - MGAI_URL=http://api:8000
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      api: {condition: service_healthy}
+
   # Run once after downloading the raw data:
   #   docker compose run --rm prep
   # It uses the same pinned image as the API, so the tables it writes are
