@@ -21,6 +21,9 @@ const usd = (n) => n == null ? "--" : (Math.abs(n) >= 1e6 ? "$" + (n / 1e6).toFi
 const usdFull = (n) => "$" + Math.round(n).toLocaleString("en-US");
 const num = (n) => Math.round(n).toLocaleString("en-US");
 const pct = (x) => (x * 100).toFixed(x < 0.1 ? 1 : 0) + "%";
+/* hours keep two decimals below 100 -- a p90 of 2.03 h must not read as "2 h" */
+const fmtv = (v, unit) => unit === "jobs" ? num(v)
+  : (Math.abs(v) < 100 ? v.toFixed(2) : num(v)) + " " + unit;
 
 /* ---------------------------------------------------------------- tooltip */
 const tip = $("#tip");
@@ -137,7 +140,7 @@ fetch("data.json").then((r) => r.json()).then((d) => {
 });
 
 function draw() {
-  ["#hero", "#tile1", "#tile2", "#tile3", "#extras"].forEach((id) => { $(id).innerHTML = ""; });
+  ["#hero", "#tile1", "#tile2", "#tile3", "#tile4", "#extras"].forEach((id) => { $(id).innerHTML = ""; });
   render(scale(RAW));
   priceCheck();
 }
@@ -348,6 +351,83 @@ function render(d) {
       ]) : null,
     ])),
   );
+
+  /* ---- tile 4: the queue, simulated ---- */
+  const sc = d.tile4;
+  if (sc) {
+    const pol = sc.policies, best = pol[pol.length - 1], nowRow = pol[0];
+    $("#tile4").append(
+      el("span", { class: "tileno", text: "Tile 4" }),
+      el("h2", { text: "Would cutting 20% make researchers wait?" }),
+      el("p", { class: "sub", html: `Not if we fix the queue first &mdash; and the queue is not short of hardware. `
+        + `We replayed <b>all ${num(sc.jobs_simulated)} startable jobs</b> (of ${num(sc.jobs_total)} in the `
+        + `dataset) through a discrete-event simulator at ${sc.gpus} GPUs, with each researcher's own `
+        + `concurrency quota in place.` }),
+      el("div", { class: "grid2" }, [
+        el("div", {}, [
+          el("h3", { text: "1. The model, checked against what really happened" }),
+          table(sc.validation, [{ h: "", k: "metric", l: 1 },
+            { h: "Observed", f: (r) => fmtv(r.observed, r.unit) },
+            { h: "Model", f: (r) => fmtv(r.model, r.unit) }]),
+          el("p", { class: "note", html: `The model reproduces <b>${pct(sc.fidelity_total)} of the total waiting</b> `
+            + `and <b>${pct(sc.fidelity)} of the person-hours</b>. Without the quotas it reproduced 5% and 1%: `
+            + `<b>the quota is the constraint</b>, not capacity and not queue order. The rest is work outside `
+            + `this published sample, so every saving below is understated.` }),
+        ]),
+        el("div", {}, [
+          el("h3", { text: "2. Why people wait: their own quota" }),
+          el("p", { class: "meta", html: `Each researcher is capped at a fixed number of GPUs &mdash; the data `
+            + `shows rungs at <b>${sc.caps.ladder.join(" / ")}</b> (${sc.caps.snapped} of ${sc.caps.users} `
+            + `owners sit exactly on one). In <b>90%</b> of waits over an hour, the person was already at their `
+            + `cap, while a median of <b>287 of 450 GPUs sat free</b>.` }),
+          el("p", { class: "meta", html: `So a researcher submits 200 tasks, ${sc.caps.ladder[0]} run, and the `
+            + `rest queue behind their own jobs on a two-thirds idle cluster. Reordering the queue cannot fix `
+            + `that; only the quota can.` }),
+          el("p", { class: "note", html: `Reference run: removing quotas entirely leaves `
+            + `<b>${num(sc.no_caps.person_h)} person-hours</b> against ${num(nowRow.person_h)} today &mdash; `
+            + `confirming the ceiling is what binds.` }),
+        ]),
+      ]),
+      el("div", { style: "margin-top:18px" }, [
+        el("h3", { text: "3. Now vs optimized — person-hours researchers spend waiting" }),
+        bars(pol.map((r) => ({ label: r.policy.replace("NOW: ", ""), usd: r.person_h,
+                               note: r.delta_pct ? `${(r.delta_pct * 100).toFixed(0)}% vs today` : "today" })),
+          { aria: "person-hours waiting by policy", fmt: (v) => num(v) + " h", labelW: 230 }),
+        el("p", { class: "legend", html: `<span><span class="swatch" style="background:var(--series-1)"></span>`
+          + `person-hours waiting (each researcher's overlapping waits merged, so one person waiting on 200 `
+          + `tasks counts once)</span>` }),
+        table(pol.concat([sc.no_caps]), [
+          { h: "Policy", k: "policy", l: 1 }, { h: "Person-hours", f: (r) => num(r.person_h) },
+          { h: "vs today", f: (r) => r.delta_pct ? (r.delta_pct * 100).toFixed(0) + "%" : "—" },
+          { h: "Jobs over 4h", f: (r) => num(r.over_4h) }, { h: "p95", f: (r) => r.p95_h + " h" },
+          { h: "p99", f: (r) => r.p99_h + " h" },
+          { h: "Researcher time at $95/h", f: (r) => usdFull(r.usd) }]),
+        el("p", { class: "meta", html: `<b>The fix is worth ${usdFull(Math.abs(best.delta_usd))} of researcher `
+          + `time</b> and costs no capacity: it hands out cards that are already idle. The idle timeout from `
+          + `tile 2 appears here too &mdash; it returns GPU money <i>and</i> shortens the queue, because an idle `
+          + `job holds a slot against its owner's quota.` }),
+      ]),
+      el("div", { style: "margin-top:18px" }, [
+        el("h3", { text: "4. Where to set the dial" }),
+        el("p", { class: "meta", text: "Let a researcher exceed their quota while the cluster is below this "
+          + "much allocated. Those extra jobs should be preemptible, so the quota reasserts itself the moment "
+          + "the machine gets busy." }),
+        bars(sc.sweep.map((r) => ({ label: `below ${(r.threshold * 100).toFixed(0)}% allocated`, usd: r.person_h,
+                                    note: `${num(r.over_4h)} jobs still wait over 4h` })),
+          { aria: "person-hours by elastic threshold", fmt: (v) => num(v) + " h", labelW: 230 }),
+        el("p", { class: "note", html: `Smooth curve, no cliff &mdash; this is a policy dial. <b>70% is the `
+          + `conservative setting</b>: a third of the cluster stays governed by quota for genuinely busy hours, `
+          + `and the waiting still falls ${Math.abs(best.delta_pct * 100).toFixed(0)}%.` }),
+      ]),
+      el("p", { class: "risk", style: "margin-top:16px",
+        html: `<b>If we are wrong:</b> the quotas exist to stop one researcher taking the cluster in a busy `
+          + `week, and we simulated the extra jobs as ordinary ones &mdash; with preemption, some of that work `
+          + `would be interrupted and resubmitted. The quota values are inferred from each owner's observed `
+          + `peak concurrency, not read from Slurm, so the size of the effect could move; the no-quota reference `
+          + `run shows the direction does not. And this buys <b>researcher time, not GPU-hours</b>: it does not `
+          + `contribute to the 20% cut, it is what makes the cut safe to take.` }),
+    );
+  }
 
   /* ---- extras: hardware, triage, queue, clear rules ---- */
   const tri = d.triage.summary;

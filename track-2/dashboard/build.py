@@ -9,6 +9,7 @@ The reasoning behind every number is in track-2/ANALYSIS.md, case by case.
 """
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 
@@ -435,6 +436,63 @@ meta = {
                 "GET /v1/resources/underperforming", "GET /v1/queue/latency", "GET /v1/policies/rules"],
 }
 
+# ------------------------------------------- tile 4: the queue, simulated
+# Runs the real simulator (analysis/sched_sim.py) on every startable job. Set
+# DASH_SIM=0 to skip it if a rebuild needs to be quick.
+sched = None
+if os.environ.get("DASH_SIM", "1") != "0":
+    try:
+        sys.path.insert(0, "analysis")
+        from sched_sim import H as SH, Sim
+        print("simulating the scheduler (every startable job, 450 GPUs)...")
+        sim = Sim(j)
+        obs = sim.summarize("Observed (today)", sim.observed)
+        runs = {
+            "NOW: quotas as they are": {},
+            "Idle timeout (1h)": dict(idle_kill_h=1.0),
+            "Elastic quota under 70%": dict(elastic_below=0.70),
+            "Both": dict(idle_kill_h=1.0, elastic_below=0.70),
+        }
+        pol = {}
+        for name, kw in runs.items():
+            pol[name] = sim.summarize(name, sim.run(**kw))
+            print(f"  {name:26s} person-hours {pol[name]['person_h']:8,.0f}")
+        nocap = sim.summarize("Reference: no quotas at all", sim.run(caps=False))
+        base = pol["NOW: quotas as they are"]
+        sweep = []
+        for thr in (0.5, 0.7, 0.9):
+            r = sim.summarize(f"below {thr:.0%}", sim.run(idle_kill_h=1.0, elastic_below=thr))
+            r["threshold"] = thr
+            sweep.append(r)
+        for r in list(pol.values()) + [nocap] + sweep:
+            r["usd"] = round(r["person_h"] * USD_ENG, 0)
+            r["delta_person_h"] = round(r["person_h"] - base["person_h"], 1)
+            r["delta_usd"] = round((r["person_h"] - base["person_h"]) * USD_ENG, 0)
+            r["delta_pct"] = round(r["person_h"] / base["person_h"] - 1, 4)
+        sched = {
+            "priced_in": "engineer",
+            "jobs_simulated": int(len(sim.j)), "jobs_total": int(sim.n_total),
+            "gpus": 450,
+            "caps": {"users": len(sim.caps_user), "snapped": int(sim.snapped),
+                     "ladder": [16, 32, 64],
+                     "median": float(pd.Series(list(sim.caps_user.values())).median())},
+            "observed": obs,
+            "policies": list(pol.values()), "no_caps": nocap, "sweep": sweep,
+            "fidelity": round(base["person_h"] / obs["person_h"], 4),
+            "fidelity_total": round(base["total_h"] / obs["total_h"], 4),
+            "validation": [
+                {"metric": "total waiting", "observed": obs["total_h"], "model": base["total_h"], "unit": "h"},
+                {"metric": "person-hours waiting", "observed": obs["person_h"], "model": base["person_h"], "unit": "h"},
+                {"metric": "p90 wait", "observed": obs["p90_h"], "model": base["p90_h"], "unit": "h"},
+                {"metric": "p95 wait", "observed": obs["p95_h"], "model": base["p95_h"], "unit": "h"},
+                {"metric": "p99 wait", "observed": obs["p99_h"], "model": base["p99_h"], "unit": "h"},
+                {"metric": "jobs waiting over 4h", "observed": obs["over_4h"], "model": base["over_4h"], "unit": "jobs"},
+            ],
+        }
+    except Exception as e:                      # a broken sim must not break the page
+        print(f"  ! simulation skipped: {e}")
+        sched = None
+
 summary = api("/v1/efficiency/summary")
 rules = api("/v1/policies/rules")
 clear_rules = []
@@ -452,6 +510,7 @@ out = {
     "hardware": hardware,
     "triage": {"summary": triage_summary, "entries": triage},
     "queue": queue,
+    "tile4": sched,
     "clear_rules": clear_rules,
 }
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
