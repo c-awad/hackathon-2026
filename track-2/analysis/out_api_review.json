@@ -1,0 +1,437 @@
+{
+ "findings": {
+  "endpoint": "POST /v1/events/findings",
+  "layer": "A",
+  "kind": "fact (corpus)",
+  "calls": {
+   "unfiltered_page_size": 100,
+   "per_detector_counts": {
+    "rules::array-mass-failure": 100,
+    "rules::array-task-failure": 100,
+    "rules::filesystem-latency-degraded": 100,
+    "rules::gpu-imbalance": 100,
+    "rules::gpu-low-utilization": 95,
+    "rules::gpu-memory-oversized": 100,
+    "rules::gpu-never-computed": 100,
+    "rules::gpu-not-needed": 100,
+    "rules::idle-interactive-session": 100,
+    "rules::multi-node-low-utilization": 63,
+    "rules::node-elevated-failure-rate": 100,
+    "rules::node-failure": 31,
+    "rules::node-hardware-fault": 1,
+    "rules::node-job-failure-burst": 47,
+    "rules::node-under-utilization-slo": 35,
+    "rules::queue-starvation": 22,
+    "rules::queue-wait-p95-slo": 8,
+    "rules::queue-weekly-peak": 1,
+    "rules::slow-cancel-of-idle-job": 100,
+    "rules::timelimit-overreservation": 41,
+    "rules::unsuccessful-gpu-spend": 54,
+    "rules::user-repeat-failure": 36,
+    "rules::wallclock-kill": 100
+   },
+   "is_active_true": 100,
+   "severity_CRITICAL": 32
+  },
+  "checks": [
+   "corpus is 11,979 findings across 23 detectors; every call is capped at 100 results (an unfiltered call and a filtered one both return 100), so per-detector counts from this endpoint are 'up to 100' and a full sweep needs ~120 calls",
+   "8,691 findings (73%) are RESOLVED/isActive=false; the active set is 3,288 -- about a quarter of the corpus",
+   "severity is not cost: the 31 CRITICAL job-scope findings carry 7,772 GPU-h ($19,430) while the 8,254 LOW ones carry 303,782 GPU-h ($759,455) -- 39x more, and the largest single LOW finding is 3,160 GPU-h ($7,899)",
+   "CRITICAL is reserved for the scheduler's 31 node failures plus the one hardware fault -- it tracks availability, not money"
+  ],
+  "verdict": "Trust it as a corpus. Never sort it by severity and call that a cost ranking.",
+  "change": "Expose a total count and a cursor, and let a caller order by metadata.impact_gpu_hours."
+ },
+ "causal": {
+  "endpoint": "POST /v1/causal",
+  "layer": "A",
+  "kind": "fact (the authoritative one)",
+  "calls": {
+   "rules::filesystem-latency-degraded": {
+    "root_cause": "pvc/scratch-lustre-02 degraded \u2014 filesystem p99 latency rose 30.3x, affecting 121 nodes",
+    "confidence": 0.74,
+    "top": "pvc/scratch-lustre-02",
+    "top_score": 0.88,
+    "next_scores": [
+     0.31,
+     0.31,
+     0.31
+    ],
+    "agreement": {
+     "method_a": 3,
+     "method_b": 2
+    }
+   },
+   "rules::array-task-failure": {
+    "root_cause": "array/65192801012 \u2014 22 of 22 tasks failed, 100% with exit code 256, spread across 10 machines (median runtime 2055s)",
+    "confidence": 1.0,
+    "top": "array/65192801012",
+    "top_score": 1.0,
+    "next_scores": [
+     0.136,
+     0.136,
+     0.136
+    ],
+    "agreement": null
+   },
+   "rules::array-mass-failure": {
+    "root_cause": "array/942024284 \u2014 18 of 18 tasks failed, 100% with exit code 256, spread across 14 machines (median runtime 0s)",
+    "confidence": 1.0,
+    "top": "array/942024284",
+    "top_score": 1.0,
+    "next_scores": [
+     0.111,
+     0.111,
+     0.111
+    ],
+    "agreement": null
+   },
+   "rules::node-hardware-fault": {
+    "root_cause": "r216287-n200569 \u2014 SIGBUS (bus error) crashes for 3 people who never hit it elsewhere; 140 of 144 jobs failed",
+    "confidence": 1.0,
+    "top": "r216287-n200569",
+    "top_score": 1.0,
+    "next_scores": [],
+    "agreement": null
+   },
+   "rules::node-job-failure-burst": {
+    "root_cause": "ns/u-49373354431 \u2014 100% of the failures on r1039410-n772143; they had r1039410-n772143 to themselves, and the same array's tasks on other machines failed 100% of the time",
+    "confidence": 1.0,
+    "top": "ns/u-49373354431",
+    "top_score": 1.0,
+    "next_scores": [
+     0.0
+    ],
+    "agreement": null
+   },
+   "rules::gpu-low-utilization": {
+    "empty": "No causal chain for this finding. Causal analysis resolves a correlated cluster of findings that share a root cause; a f"
+   }
+  },
+  "checks": [
+   "121 filesystem findings all resolve to pvc/scratch-lustre-02 at score 0.88, nodes at 0.31 -- one cause, not 121 problems",
+   "array-task findings resolve to their array at score 1.0 with each machine at ~0.14; three different task findings gave 3 distinct culprit(s): {'array/65192801012', 'array/31811330654', 'array/10966139174'}",
+   "the spread across machines IS the evidence the machines are innocent",
+   "a finding with no rootCauses returns findings: [] and a message -- that is correct behaviour, not a failure (1 of the 6 detectors tried)",
+   "but the volume answer quotes the ratio of whichever finding you ask about: per-node ratios run 28.3x-45.5x, so the same incident reads 'rose 28.3x' or 'rose 45.5x'",
+   "and its second chain hop (gpu_sm_utilization abrupt_drop -91.4%) is a constant in api/main.py; the real telemetry on those 121 nodes shows 31.4% vs 36.4% the week before -- a 5-point dip"
+  ],
+  "verdict": "The best endpoint in the API. Everything ranked should pass through it first.",
+  "change": "Quote one volume-level latency figure, and derive the utilization hop from telemetry or drop it."
+ },
+ "neighbor": {
+  "endpoint": "POST /v1/neighbor",
+  "layer": "A",
+  "kind": "fact (graph)",
+  "calls": {
+   "nodes": 500,
+   "edges": 611,
+   "types": [
+    "k8s:node",
+    "k8s:persistentvolumeclaim",
+    "k8s:pod"
+   ]
+  },
+  "checks": [
+   "resources: 77,399 ({'k8s:pod': 74849, 'k8s:job': 2129, 'k8s:node': 225, 'k8s:namespace': 195, 'k8s:persistentvolumeclaim': 1})",
+   "edges: 198,601 ({'RUNS_ON': 81521, 'CONTAINS': 74849, 'OWNS': 39694, 'MOUNTS': 2537})",
+   "one hop from the volume returns 500 nodes / 611 edges, but the volume has 2,537 MOUNTS edges: api/main.py:142 caps the node set at 500 with no flag in the response",
+   "the cap is applied before edges are gathered, so hop_count=2 returns 500 nodes and only 5 edges -- fewer than one hop, and a graph whose nodes are mostly unconnected",
+   "pods mounting the volume were active on 159 machines during the episode, but only 121 have a finding, so the graph is wider than the detector's blast radius"
+  ],
+  "verdict": "Use it to check whether a 'cluster of problems' shares a dependency.",
+  "change": "Return edge direction and type counts in the response so a caller can walk it without the parquet."
+ },
+ "rules": {
+  "endpoint": "GET /v1/policies/rules",
+  "layer": "A",
+  "kind": "fact (catalogue)",
+  "calls": {
+   "rules": 24,
+   "clear": [
+    "rules::gpu-pcie-saturated"
+   ]
+  },
+  "checks": [
+   "24 rules armed, 1 reporting CLEAR",
+   "rules::gpu-pcie-saturated has never fired: peak PCIe on this estate is 4,240 MB/s of a 15,754 MB/s link (27%), so data movement is not the bottleneck -- a negative result worth as much as a finding",
+   "the rules' own text withholds cause on purpose (node-elevated-failure-rate reports a rate, not a reason), which is why case 6 had to triage all 113 itself"
+  ],
+  "verdict": "Read it alongside the findings. A CLEAR rule is evidence.",
+  "change": "Ship each rule's threshold in the response (they are only in docs/rules.md)."
+ },
+ "detect": {
+  "endpoint": "POST /v1/detect/{integration_id}",
+  "layer": "A",
+  "kind": "fact (counts)",
+  "calls": {
+   "status": 200,
+   "keys": [
+    "success",
+    "message",
+    "results"
+   ]
+  },
+  "checks": [
+   "returns per-detector counts; HTTP 200 for an arbitrary integration id"
+  ],
+  "verdict": "Fine for a health check of the detector set.",
+  "change": null
+ },
+ "price_book": {
+  "endpoint": "GET /v1/price-book",
+  "layer": "B",
+  "kind": "fact",
+  "calls": {
+   "version": "2026-Q3",
+   "usd_per_gpu_hour": 2.5,
+   "usd_per_kwh": 0.15,
+   "usd_per_engineer_hour": 95.0,
+   "epoch_offset": 1750862959
+  },
+  "checks": [
+   "$2.5/GPU-hour and $95.0/engineer-hour -- the engineer rate is 38x the GPU rate, which is why anything monetised as human time dominates every other number",
+   "epoch_offset maps the data's relative timestamps to calendar dates; every date in our analysis uses it"
+  ],
+  "verdict": "Use it, and pass overrides so a price change is visible as +custom.",
+  "change": "Version the engineer rate separately -- it is an assumption about people, not a hardware price."
+ },
+ "efficiency": {
+  "endpoint": "GET /v1/efficiency/summary",
+  "layer": "B",
+  "kind": "fact",
+  "calls": {
+   "rows": {
+    "allocated": 594003.8,
+    "computed": 228903.8,
+    "computed_completed": 100788.8
+   },
+   "monetized": {
+    "amount": 1485009.6,
+    "currency": "USD",
+    "price_book_version": "2026-Q3"
+   },
+   "caveat": "SM utilization is a proxy for useful work. A data-loader-bound or communication-bound job does real work at low SM occup"
+  },
+  "checks": [
+   "allocated 594,004 reproduces jobs.parquet gpu_hours exactly (594,004)",
+   "computed 228,904 vs our sm-weighted 228,904 -- matches",
+   "computed_completed 100,789 vs ours 100,789 -- matches",
+   "the caveat is the honest part: SM utilization is a proxy, and a data-loader-bound job does real work at low occupancy"
+  ],
+  "verdict": "Recomputable and correct. This is the one Layer B number we put on the dashboard as-is.",
+  "change": "Add a fourth row for allocation the cluster never computed on, so the waterfall ends at waste."
+ },
+ "waste": {
+  "endpoint": "GET /v1/waste/breakdown",
+  "layer": "B",
+  "kind": "fact",
+  "calls": {
+   "rows": {
+    "COMPLETED": 229040.6,
+    "CANCELLED": 203929.6,
+    "TIMEOUT": 107951.5,
+    "FAILED": 50033.2,
+    "NODE_FAIL": 2027.9,
+    "UNDECODED_11": 1021.1,
+    "UNDECODED_1024": 0.0
+   }
+  },
+  "checks": [
+   "every state matches our groupby to the hour: COMPLETED 229,041, CANCELLED 203,930, TIMEOUT 107,952, FAILED 50,033, NODE_FAIL 2,028, UNDECODED_11 1,021",
+   "it deliberately does not total the rows, which is right: CANCELLED (203,930 GPU-h) is not waste in itself -- those jobs ran at 34.3% utilization against the cluster's 38.5%",
+   "counting CANCELLED as waste would add 116,692 GPU-h of work that was computing when it was stopped"
+  ],
+  "verdict": "Trust the rows. Refuse to sum them for the CFO without saying which rows you counted.",
+  "change": "Return each state's busy (sm-weighted) hours next to its allocated hours -- that single column ends the CANCELLED argument."
+ },
+ "queue": {
+  "endpoint": "GET /v1/queue/latency",
+  "layer": "B",
+  "kind": "fact",
+  "calls": {
+   "row": {
+    "p50_sec": 8.0,
+    "p90_sec": 7768.900000000009,
+    "p99_sec": 65866.05000000016,
+    "max_sec": 1051208.0,
+    "total_wait_hours": 98213.75416666667,
+    "n_jobs": 74838
+   },
+   "monetized": {
+    "amount": 9330306.65,
+    "currency": "USD",
+    "price_book_version": "2026-Q3"
+   }
+  },
+  "checks": [
+   "total_wait_hours 98,214 = sum of wait_sec = time_start - time_submit",
+   "that splits into 22,880 h before the job was eligible (23%) and 75,334 h of real queueing; all 30,713 jobs with a pre-eligible gap are array tasks",
+   "monetized $9,330,307 is 6.3x the entire GPU bill",
+   "53% of jobs are array tasks, so one person with 1,000 pending tasks is counted 1,000 times; merged per person the same waiting is 4,997 h, and 3,719 h past a 4-hour target",
+   "interactive sessions -- an actual person waiting -- total 0.8 h over four months",
+   "kind says 'fact' but the monetisation is a judgement; rules::queue-starvation's own text says this is elapsed time, NOT staffed time"
+  ],
+  "verdict": "Use the percentiles. Do not use the monetised figure.",
+  "change": "Measure from time_eligible, group by person, and mark the monetised field kind=judgment."
+ },
+ "scaling": {
+  "endpoint": "GET /v1/scaling/efficiency",
+  "layer": "B",
+  "kind": "judgment",
+  "calls": {
+   "rows": [
+    {
+     "gpu_count_band": "1",
+     "jobs": 65021,
+     "gpu_hours": 294561.6,
+     "median_sm_util_pct": 17.0,
+     "share_under_5pct": 0.376,
+     "share_over_80pct": 0.047
+    },
+    {
+     "gpu_count_band": "2",
+     "jobs": 8472,
+     "gpu_hours": 137113.9,
+     "median_sm_util_pct": 0.5,
+     "share_under_5pct": 0.564,
+     "share_over_80pct": 0.086
+    },
+    {
+     "gpu_count_band": "3-4",
+     "jobs": 284,
+     "gpu_hours": 47116.7,
+     "median_sm_util_pct": 0.0,
+     "share_under_5pct": 0.62,
+     "share_over_80pct": 0.099
+    },
+    {
+     "gpu_count_band": "5-8",
+     "jobs": 674,
+     "gpu_hours": 16738.6,
+     "median_sm_util_pct": 72.9,
+     "share_under_5pct": 0.366,
+     "share_over_80pct": 0.457
+    },
+    {
+     "gpu_count_band": "9-16",
+     "jobs": 303,
+     "gpu_hours": 76729.1,
+     "median_sm_util_pct": 2.4,
+     "share_under_5pct": 0.578,
+     "share_over_80pct": 0.112
+    },
+    {
+     "gpu_count_band": "17-64",
+     "jobs": 95,
+     "gpu_hours": 21743.9,
+     "median_sm_util_pct": 1.6,
+     "share_under_5pct": 0.611,
+     "share_over_80pct": 0.021
+    }
+   ]
+  },
+  "checks": [
+   "it reports median SM utilization plus share_under_5pct and share_over_80pct per width band, and its own caveat says to read the shares, not the median -- correct, because the distribution is bimodal",
+   "but every figure is row-weighted. Hour-weighted, utilization RISES with width: 1 29%, 2 38%, 3-4 42%, 5-8 77%, 9-16 67%, 17-64 32%",
+   "so 'wide jobs are wasteful' is a job-count artefact; the 398 jobs of 9+ GPUs hold 16.6% of all GPU-hours at 59% utilization"
+  ],
+  "verdict": "Read it, then recompute hour-weighted before drawing a conclusion about money.",
+  "change": "Add a gpu_hour_weighted_sm_util column. Without it the endpoint invites the wrong cut."
+ },
+ "underperforming": {
+  "endpoint": "GET /v1/resources/underperforming",
+  "layer": "B",
+  "kind": "judgment",
+  "calls": {
+   "top_nodes": [
+    [
+     "r4605940-n772143",
+     259,
+     2230.4
+    ],
+    [
+     "r7317916-n772143",
+     165,
+     1188.9
+    ],
+    [
+     "r3974592-n172107",
+     164,
+     7526.1
+    ],
+    [
+     "r4144777-n172107",
+     154,
+     4267.5
+    ],
+    [
+     "r7317916-n303509",
+     146,
+     7677.4
+    ]
+   ],
+   "top_users": [
+    [
+     "u-39537979185",
+     40823.2
+    ],
+    [
+     "u-53407250664",
+     40357.0
+    ],
+    [
+     "u-27617141424",
+     25601.2
+    ],
+    [
+     "u-12626134553",
+     18986.0
+    ],
+    [
+     "u-1539197275",
+     18507.0
+    ]
+   ]
+  },
+  "checks": [
+   "nodes are ranked by finding count, and the response says itself that it does not read rootCauses",
+   "the five it names carry 95-209 array-task findings each -- symptoms of other people's scripts. Our triage of those machines: r4605940-n772143: user_code/user_code; r7317916-n772143: user_code/user_code; r3974592-n172107: user_code; r4144777-n172107: cannot_determine/user_code/cannot_determine; r7317916-n303509: user_code/workload_mix",
+   "three machines tie at 146 findings for 5th place, so which machine you are told to drain depends on dict order",
+   "the silent SIGBUS machine r216287-n200569 -- the one real hardware fault -- ranks 21st",
+   "users are ranked by unsuccessful GPU-hours, which is defensible but lists people, and the brief warns that a dashboard ranking employees by waste is a hostile dashboard"
+  ],
+  "verdict": "Do not act on the node ranking. Treat the user ranking as capacity, not blame.",
+  "change": "Collapse findings by rootCauses before ranking, rank machines on machine-following evidence, and break ties explicitly."
+ },
+ "recommendations": {
+  "endpoint": "GET /v1/recommendations",
+  "layer": "B",
+  "kind": "judgment",
+  "calls": {
+   "rec_lowutil": {
+    "usd": 53430.03,
+    "gpu_hours": 21372.0,
+    "confidence": 0.61,
+    "effort": "medium",
+    "cited": 20
+   },
+   "rec_drain_nodes": {
+    "usd": 57225.93,
+    "gpu_hours": 22890.4,
+    "confidence": 0.58,
+    "effort": "low",
+    "cited": 20
+   }
+  },
+  "checks": [
+   "rec_lowutil = 35% of gpu-low-utilization's 61,063 GPU-h; the 0.35 is a constant in api/main.py, not something the data supports",
+   "it cites 20 of 95 findings, and 21 of those jobs use 16+ GPUs, which a fractional-GPU queue cannot serve",
+   "rec_drain_nodes = $57,226 from summing those five machines' job-scope impact_gpu_hours across impact_kind (lost + consumed + unused_capacity), which docs/rules.md says not to do",
+   "draining is not a saving: it removes 1,680 GPU-h a week of capacity (~$55K a quarter) and the failing arrays reschedule elsewhere",
+   "both are kind=judgment with confidence 0.58-0.61, which is honest labelling of a number that should not be actioned"
+  ],
+  "verdict": "The weakest endpoint. Every recommendation here needs re-deriving before it reaches a CFO.",
+  "change": "Route each recommendation through /v1/causal, express draining as a cost, and never sum across impact_kind."
+ }
+}

@@ -132,7 +132,9 @@ Users are hashed. The dashboard frames this as where capacity sits, not who to b
 - **Wide jobs are the efficient ones per hour.** Hour-weighted utilization rises with
   width, from 29% on one GPU to 59% on nine or more. Counted by jobs instead, wide
   jobs look wasteful (the brief notes 59% of 9+ GPU jobs run under 5%). Both are
-  true; only the hour-weighted view is about money.
+  true; only the hour-weighted view is about money. **On finer bands the rise is not
+  monotonic** (1: 29%, 2: 38%, 3-4: 42%, 5-8: 77%, 9-16: 67%, 17-64: 32%) -- the very
+  widest jobs fall back, so "wider is better" holds to about 16 GPUs, not beyond.
 - **Interactive sessions are 8.9% of spend at 15.5% utilization.** That points at an
   idle-timeout policy on interactive allocations (see `rules::idle-interactive-session`).
 
@@ -950,7 +952,7 @@ any evidence of a hardware fault.
 **The rival recommendation is also shaky.** `rec_lowutil` ("fractional-GPU queue",
 $53,430) takes 35% of `gpu-low-utilization`'s 61,063 GPU-h. The 0.35 is a constant
 in the code, not something the data supports. It cites only 20 of the 95 findings,
-and 24 of those 95 jobs use 16 or more GPUs, which a fractional-GPU queue doesn't
+and 21 of those 95 jobs use 16 or more GPUs, which a fractional-GPU queue doesn't
 serve.
 
 ### Argue with us: what Layer B should do instead
