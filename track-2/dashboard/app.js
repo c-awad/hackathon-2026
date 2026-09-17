@@ -459,19 +459,20 @@ function renderTile4() {
         <p class="note">Let a researcher exceed their quota while the cluster is quiet (the extra jobs preemptible). Every setting is a
         full replay, precomputed when this page was built &mdash; the slider selects between 12 real runs, it does not interpolate.</p>
         <div id="dial"></div></div></div>
-    <div class="panel" style="margin-top:14px"><h3>Safer than a reactive quota: a credits pool (case 10)</h3>
-      <p class="meta">The elastic rule cannot know who is about to come back, and 136 of the jobs it starts early run over 24 hours.
-      We tested two alternatives over all 74,838 jobs. <b>Forecasting each researcher's quota from recent demand fails</b>: demand is
-      bursty, the forecast is 2&times; too low in 21% of active weeks, and waiting rises 1,316%. <b>A credits pool works</b> &mdash; a researcher
-      who is away lends unused quota, their own quota never reduced, for a window of the mean job length (5.1 h), to jobs whose
-      <i>predicted</i> runtime fits (requested limits are over-asked 2,057&times;): waiting falls <b>11%, or 21% with the idle timeout</b>, and
-      lenders were blocked for just <b>4.3 researcher-hours in 18 weeks</b>. Weakness: 26% of borrowed GPU-hours overran the window,
-      so production needs preemption past it. Order: idle timeout, then the pool, the elastic rule only with preemption.</p></div>
+    <div class="panel" style="margin-top:14px"><h3>Safer than a reactive quota: a credits pool <span class="fig-hint">case 10 &middot; try it</span></h3>
+      <p class="note">The elastic rule above cannot know who is about to come back, and 136 of the jobs it starts early run over 24 hours.
+      A <b>credits pool</b> bounds the risk instead: a researcher who has been away for 4 hours lends their unused quota &mdash; their own
+      quota is never reduced &mdash; and a waiting job may borrow only if it is expected to finish inside the loan window.</p>
+      <div id="pool"></div>
+      <p class="note">We also tested <b>forecasting each researcher's quota</b> from two weeks of their own demand. It fails: demand is bursty,
+      the forecast is 2&times; too low in 21% of active weeks, and waiting rises 1,316%. Recommended order: the idle timeout, then the pool,
+      and the elastic rule only once preemption exists.</p></div>
     <p class="note"><b>Hours are the honest unit here.</b> The dollar figure prices waiting at $${sc.usd_per_engineer_hour}/engineer-hour and so assumes the
     wait fully blocks the person &mdash; the assumption we argue against in <code>/v1/queue/latency</code> (tab 3). It is an upper bound and is
     <b>not added to the GPU savings</b>: that is cash you stop spending, this is throughput you get back. Quotas are inferred from each
     owner's observed peak concurrency, not read from Slurm.</p>`;
   dial(sc, today);
+  poolDial();
 }
 const fmtv = (v, unit) => unit === "jobs" ? num(v) : (Math.abs(v) < 100 ? v.toFixed(2) : num(v)) + " " + unit;
 
@@ -500,6 +501,53 @@ function dial(sc, today) {
   };
   $("d-thr").addEventListener("input", (e) => { idx = +e.target.value; paint(); });
   $("d-kill").addEventListener("change", (e) => { kill = e.target.checked; paint(); });
+  paint();
+}
+
+/* The credits pool. Every setting is a full replay of all startable jobs, computed
+   by analysis/case10_grid.py (each takes ~45 s, so they are precomputed rather than
+   run at page build). The control selects between real runs. */
+function poolDial() {
+  const P = D.pool, host = $("pool");
+  if (!host) return;
+  if (!P) { host.innerHTML = `<p class="meta">Pool grid not built: run <code>PYTHONPATH=analysis python3 analysis/case10_grid.py</code>.</p>`; return; }
+  const W = P.windows, base = P.rows.find((r) => r.kind === "base" && !r.idle_kill);
+  const find = (w, gate, kill) => P.rows.find((r) => r.kind === "pool" && r.window_h === w && r.gate === gate && r.idle_kill === kill);
+  let idx = W.indexOf(P.mean_job_h); if (idx < 0) idx = 2;
+  let gate = "history", kill = false;
+  host.innerHTML = `<div class="dial"><div class="dialrow">
+      <label>Loan window: <input id="p-win" type="range" min="0" max="${W.length - 1}" step="1" value="${idx}"> <span id="p-lab" class="mono"></span></label>
+      <label><input type="radio" name="p-gate" value="history" checked> borrow if <b>predicted</b> runtime fits</label>
+      <label><input type="radio" name="p-gate" value="limit"> borrow if <b>requested</b> time limit fits</label>
+      <label><input id="p-kill" type="checkbox"> also end allocations idle for 1 h</label></div>
+    <div class="readout" id="p-out"></div><div id="p-bars"></div><p class="note" id="p-note"></p></div>`;
+  const paint = () => {
+    const w = W[idx];
+    const killBox = $("p-kill");
+    killBox.disabled = gate === "limit";            // that combination was not simulated
+    const r = find(w, gate, gate === "limit" ? false : kill) || base;
+    const saved = base.person_h - r.person_h;
+    const overShare = r.borrowed_gpu_h ? r.overrun_gpu_h / r.borrowed_gpu_h : 0;
+    $("p-lab").textContent = `${w} h` + (w === P.mean_job_h ? " — the mean job length" : "");
+    $("p-out").innerHTML = `<div><div class="big">${num(r.person_h)} h</div><div class="unit">person-hours researchers spend waiting</div></div>
+      <div><div class="delta ${saved > 0.5 ? "okc" : ""}">${Math.abs(saved) < 0.5 ? "no change" : `−${pct(saved / base.person_h, 0)} vs today`}</div>
+        <div class="unit">worth up to <b>${usdFull(Math.max(saved, 0) * P.usd_per_engineer_hour)}</b> if that waiting fully blocks</div></div>
+      <div><div class="delta">${num(r.borrowed_gpu_h)} GPU-h</div><div class="unit">borrowed from people who were away</div></div>
+      <div><div class="delta ${overShare > 0.2 ? "badc" : ""}">${pct(overShare, 0)}</div><div class="unit">of borrowed hours overran the window</div></div>
+      <div><div class="delta ${r.harm_h > 20 ? "badc" : "okc"}">${r.harm_h} h</div><div class="unit">lenders blocked while borrowed jobs ran</div></div>`;
+    $("p-bars").innerHTML = hbars([{ label: "Today", v: base.person_h }, { label: "This pool setting", v: r.person_h },
+      { label: "Elastic quota under 70% (reactive)", v: D.tile4.grid.find((g) => g.threshold === 0.7 && !g.idle_kill).person_h, dim: true }], base.person_h);
+    $("p-note").innerHTML = gate === "limit"
+      ? `<b>Gated on requested limits, the pool never lends.</b> The median requested limit is 24 h against a median runtime of about a minute &mdash;
+         a 2,057&times; over-ask &mdash; so almost no job "fits". Only ${num(r.borrowed_gpu_h)} GPU-hours were borrowed.`
+      : overShare > 0.2
+        ? `A job's runtime is predictable from its owner's history (85% finish within their past p90), so the pool lends &mdash; but
+           <b>${pct(overShare, 0)} of borrowed hours ran past the window</b>: rare long jobs carry the hours. Production needs preemption past the window.`
+        : `Longer windows lend more and overrun less, while lender harm stays near zero: the lender's own quota is never reduced, so the risk is bounded by design.`;
+  };
+  $("p-win").addEventListener("input", (e) => { idx = +e.target.value; paint(); });
+  $("p-kill").addEventListener("change", (e) => { kill = e.target.checked; paint(); });
+  host.querySelectorAll('input[name="p-gate"]').forEach((el) => el.addEventListener("change", (e) => { gate = e.target.value; paint(); }));
   paint();
 }
 

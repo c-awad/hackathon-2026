@@ -1478,6 +1478,14 @@ The median job is 2 minutes; the mean is pulled up by a long tail.
 saved. 28 researchers better off, 6 worse, the worst by 20 hours. The harm barely
 moves with the window, because it is bounded by design rather than by luck.
 
+**This is interactive on the dashboard** (tab 4): a loan-window slider, a toggle
+between gating on predicted runtime and on the requested limit, and the idle-timeout
+checkbox. It reads a 17-run grid from `analysis/case10_grid.py`, which replays all
+74,838 jobs per setting in parallel. Each pool replay takes about 45 seconds, so
+unlike the quota dial the grid is precomputed and committed
+(`analysis/out_case10_grid.json`, policy-level aggregates only) rather than run at
+container start.
+
 ### The pool's honest weakness
 
 **26% of borrowed GPU-hours ran past the loan window.** By *count* only about 7.5%

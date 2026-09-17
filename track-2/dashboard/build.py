@@ -547,6 +547,15 @@ if os.environ.get("DASH_SIM", "1") != "0":
         print(f"  ! simulation skipped: {e}")
         sched = None
 
+# The credits-pool grid (case 10) is precomputed by analysis/case10_grid.py: each
+# pool simulation is a ~45 s full replay, too slow for container start. The file
+# holds policy-level aggregates only.
+pool_grid = None
+if os.path.exists("analysis/out_case10_grid.json"):
+    pool_grid = json.load(open("analysis/out_case10_grid.json"))
+    pool_grid["priced_in"] = "engineer"
+    pool_grid["usd_per_engineer_hour"] = USD_ENG
+
 summary = api("/v1/efficiency/summary")
 rules = api("/v1/policies/rules")
 clear_rules = []
@@ -566,6 +575,7 @@ out = {
     "triage": {"summary": triage_summary, "entries": triage},
     "queue": queue,
     "tile4": sched,
+    "pool": pool_grid,
     "clear_rules": clear_rules,
 }
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
