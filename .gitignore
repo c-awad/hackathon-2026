@@ -22,3 +22,6 @@ track-2-raw.zip
 
 # IDE
 .idea/
+
+# Built at container start from data/ -- derived from licensed data, never commit
+track-2/dashboard/data.json
