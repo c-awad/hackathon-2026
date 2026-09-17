@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPU Spend</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div>
+    <h1 id="title"></h1>
+    <p class="sub" id="subtitle"></p>
+  </div>
+  <button id="report-btn" class="btn-report">Generate full report</button>
+</header>
+
+<div class="tabs" role="tablist" id="tabs">
+  <button role="tab" class="tab" data-tile="tile1" aria-selected="true">
+    <b>1</b><span>Where the money went</span>
+  </button>
+  <button role="tab" class="tab" data-tile="tile2" aria-selected="false">
+    <b>2</b><span>Where to cut</span>
+  </button>
+  <button role="tab" class="tab" data-tile="tile3" aria-selected="false">
+    <b>3</b><span>What it costs if we're wrong</span>
+  </button>
+</div>
+
+<main>
+
+  <!-- ===================================================== TILE 1 ========= -->
+  <section class="tile" id="tile1" role="tabpanel">
+    <div class="kpis" id="t1-kpis"></div>
+
+    <!-- Tabs 1 and 2 share this layout exactly, so the same bucket sits in the same
+         place on both and the CFO can read across from spend to proposal. -->
+    <div class="two-col">
+      <figure class="fig">
+        <figcaption><b>Where every dollar of the bill went</b>
+          <span class="fig-hint">Hover a slice to see what it is</span></figcaption>
+        <div class="donut-wrap">
+          <svg id="c-donut" viewBox="0 0 280 280" role="img"></svg>
+        </div>
+      </figure>
+
+      <div class="col">
+        <h3>Current Spend</h3>
+        <div class="rows" id="t1-buckets"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== TILE 2 ========= -->
+  <section class="tile" id="tile2" role="tabpanel" hidden>
+    <div class="kpis" id="t2-kpis"></div>
+
+    <div class="two-col">
+      <figure class="fig">
+        <figcaption><b>The same wheel, with the cut hatched out</b>
+          <span class="fig-hint">Hover a slice to see what it is</span></figcaption>
+        <div class="donut-wrap">
+          <svg id="t2-wheel" viewBox="0 0 280 280" role="img"></svg>
+        </div>
+      </figure>
+
+      <div class="col">
+        <h3>Proposed Actions</h3>
+        <div class="rows" id="t2-actions"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== TILE 3 ========= -->
+  <section class="tile" id="tile3" role="tabpanel" hidden>
+    <div class="kpis" id="t3-kpis"></div>
+
+    <div class="col">
+      <h3>Four calls, and what happens if we get them wrong</h3>
+      <div class="rows" id="t3-risks"></div>
+    </div>
+  </section>
+
+  <!-- ====================================================== REPORT ======== -->
+  <section id="report" hidden>
+    <div class="report-toolbar">
+      <button id="report-close" class="btn-plain">&larr; Back to dashboard</button>
+      <span class="report-title">Full analysis</span>
+      <span class="report-actions">
+        <button id="report-md" class="btn-plain">Download (.md)</button>
+        <button id="report-print" class="btn-plain">Print / PDF</button>
+      </span>
+    </div>
+    <div id="report-body"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

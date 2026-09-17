@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<!-- Scratch harness: loads index.html in a fixed-size frame and reports where each
+     block ends, so the "fits in one fold" claim can be checked instead of eyeballed.
+     Not part of the dashboard. Delete when done. -->
+<html><head><meta charset="utf-8"><title>measuring</title></head>
+<body style="margin:0">
+<script>
+const q = new URLSearchParams(location.search);
+const W = +(q.get("w") || 1440), H = +(q.get("h") || 800);
+const frame = document.createElement("iframe");
+frame.style.cssText = `width:${W}px;height:${H}px;border:0`;
+frame.src = "index.html#" + (q.get("tab") || "tile1");
+frame.onload = () => {
+  const d = frame.contentDocument;
+  const started = Date.now();
+  const tick = () => {
+    const ready = d.getElementById("title") && d.getElementById("title").textContent.trim();
+    if (!ready && Date.now() - started < 8000) { setTimeout(tick, 50); return; }
+    if (q.get("report")) d.getElementById("report-btn").click();
+    if (q.get("scroll")) d.querySelector("main").scrollTop = +q.get("scroll");
+    const main = d.querySelector("main");
+    const out = [`viewport=${W}x${H}`, `page=${d.documentElement.scrollHeight}`,
+      `scroll=${Math.max(0, main.scrollHeight - main.clientHeight)}`];
+    const box = (label, e) => {
+      if (!e) return;
+      const r = e.getBoundingClientRect();
+      out.push(`${label}:${Math.round(r.top)}->${Math.round(r.bottom)}`);
+    };
+    box("header", d.querySelector(".top"));
+    box("tabs", d.querySelector(".tabs"));
+    const tab = [...d.querySelectorAll(".tile")].find((t) => !t.hasAttribute("hidden"));
+    box("tab", tab);
+    box("kpis", tab && tab.querySelector(".kpis"));
+    box("rows", tab && tab.querySelector(".rows"));
+    box("footer", d.querySelector("footer"));
+    const svg = tab && tab.querySelector(".donut-wrap svg");
+    if (svg) {
+      const r = svg.getBoundingClientRect();
+      out.push(`wheel=${Math.round(r.width)}x${Math.round(r.height)}`);
+    }
+    const rows = tab ? [...tab.querySelectorAll(".row")] : [];
+    if (rows.length) {
+      const hs = rows.map((e) => Math.round(e.getBoundingClientRect().height));
+      out.push(`rows=${rows.length}@${[...new Set(hs)].join(",")}px`);
+    }
+    if (tab) out.push(`slack=${Math.round(H - d.querySelector("footer").getBoundingClientRect().bottom)}`);
+    const px = (sel) => {
+      const e = tab ? tab.querySelector(sel) : null;
+      return e ? Math.round(parseFloat(frame.contentWindow.getComputedStyle(e).fontSize) * 10) / 10 : "-";
+    };
+    const btn = d.querySelector(".btn-report");
+    const bcs = btn ? frame.contentWindow.getComputedStyle(btn) : null;
+    out.push(`type: base=${Math.round(parseFloat(frame.contentWindow.getComputedStyle(d.documentElement).fontSize) * 10) / 10}`
+      + ` kpi=${px(".kpi strong")} title=${px(".row-title")} sub=${px(".row-sub")} note=${px(".row-note, .level")}`
+      + (bcs ? ` btn=${Math.round(parseFloat(bcs.fontSize) * 10) / 10}/${bcs.padding}` : ""));
+    if (q.get("why")) {
+      const w = frame.contentWindow;
+      [["body", d.body], ["main", d.querySelector("main")], ["tile", tab],
+        ["two-col", tab.querySelector(".two-col")], ["col", tab.querySelector(".col")],
+        ["rows", tab.querySelector(".rows")]].forEach(([n, e]) => {
+        if (!e) return;
+        const cs = w.getComputedStyle(e);
+        out.push(`\n  ${n}: h=${e.offsetHeight} minH=${cs.minHeight} flex=${cs.flexGrow}/${cs.flexShrink}/${cs.flexBasis}`);
+      });
+    }
+    document.title = out.join("  ");
+  };
+  tick();
+};
+document.body.append(frame);
+</script>
+</body></html>

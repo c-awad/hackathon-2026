@@ -1,0 +1,3587 @@
+{
+ "meta": {
+  "title": "GPU Spend",
+  "subtitle": "Four months on one GPU cluster, in three questions. The workings, tables and caveats are in the report.",
+  "price_book": {
+   "version": "2026-Q3",
+   "usd_per_gpu_hour": 2.5,
+   "usd_per_engineer_hour": 95.0
+  },
+  "cluster": {
+   "nodes": 225,
+   "gpus_per_node": 2,
+   "jobs": 74849,
+   "users": 195,
+   "gpu_hours": 594004.0
+  },
+  "sources": [
+   "data/prepped/jobs.parquet",
+   "data/prepped/gpus.parquet"
+  ],
+  "rules_recomputed": {
+   "gpu-imbalance": {
+    "jobs": 689,
+    "idle_gpu_hours": 14558.0
+   }
+  },
+  "caveat": "MIT SuperCloud publishes this as a four-month sample of the cluster's jobs and says it is not appropriate for estimating system utilization. Figures describe the sample, not the cluster."
+ },
+ "spine": [
+  {
+   "key": "never_used",
+   "name": "Reserved, never used",
+   "full_name": "Held a GPU and never used it",
+   "plain": "The job reserved a GPU and never ran a single calculation on it, then failed, timed out or was cancelled.",
+   "now": {
+    "jobs": 15070,
+    "gpu_hours": 84896.0,
+    "usd": 212239.0,
+    "share_of_bill": 0.1429,
+    "busy_pct": 0.0,
+    "note": "These sit idle for days, not minutes. Hour-weighted, the typical one holds its GPU for 198 hours."
+   },
+   "cut": {
+    "gpu_hours": 81878.0,
+    "usd": 204695.0,
+    "share_of_bucket": 0.9645,
+    "share_of_bill": 0.1378,
+    "basis": "Everything after a 1-hour grace period.",
+    "action": "End a job whose GPUs have sat at zero for an hour.",
+    "owner": "Platform team \u2014 a scheduler policy, no researcher action needed.",
+    "confidence": "high"
+   },
+   "tradeoff": {
+    "risk": "low",
+    "what_breaks": "A job staging a large dataset, or running a long CPU preamble, that would have started computing after the grace period expired.",
+    "cost_gpu_hours": 18419.0,
+    "cost_usd": 46048.0,
+    "defence": "A peak-guarded rule has no false positives in this data: a job at 0% average and 0% peak never ran a kernel. Lengthening the grace to 8 hours is the priced safety margin."
+   }
+  },
+  {
+   "key": "barely_used",
+   "name": "Barely used",
+   "full_name": "Barely touched the GPU",
+   "plain": "The job did compute at some point, but averaged under 5% of the card.",
+   "now": {
+    "jobs": 9978,
+    "gpu_hours": 85368.0,
+    "usd": 213421.0,
+    "share_of_bill": 0.1437,
+    "busy_pct": 0.9,
+    "note": "This is the bucket that looks cuttable and is not. Some of it is real work in short bursts."
+   },
+   "cut": {
+    "gpu_hours": 42305.0,
+    "usd": 105763.0,
+    "share_of_bucket": 0.4956,
+    "share_of_bill": 0.0712,
+    "basis": "Half of the idle share of these hours, because the other half is probably real work.",
+    "action": "Investigate the biggest owners before writing any rule.",
+    "owner": "Researchers who own the workflows, with platform support.",
+    "confidence": "low"
+   },
+   "tradeoff": {
+    "risk": "high",
+    "what_breaks": "2,564 jobs averaged under 5% but passed 50% at their busiest moment, and 45% of them completed. A rule keyed on average utilization kills them in the middle of real work.",
+    "cost_gpu_hours": 43217.0,
+    "cost_usd": 108043.0,
+    "defence": "Key any rule on sustained zero, never on the average. Utilization is also a proxy: a job waiting on its data loader does real work at low occupancy."
+   }
+  },
+  {
+   "key": "cpu_work",
+   "name": "Didn't need a GPU",
+   "full_name": "Finished without ever using the GPU",
+   "plain": "The job completed successfully and never touched the GPU it was given. It is CPU work sitting in the GPU queue.",
+   "now": {
+    "jobs": 4817,
+    "gpu_hours": 12301.0,
+    "usd": 30751.0,
+    "share_of_bill": 0.0207,
+    "busy_pct": 0.0,
+    "note": "The strongest evidence in the data: the work succeeded without the card."
+   },
+   "cut": {
+    "gpu_hours": 12301.0,
+    "usd": 30751.0,
+    "share_of_bucket": 1.0,
+    "share_of_bill": 0.0207,
+    "basis": "All of it. The job already proved it does not need a GPU.",
+    "action": "Default these workflows to CPU nodes.",
+    "owner": "Workflow owners \u2014 mostly a launcher default, not per-job.",
+    "confidence": "high"
+   },
+   "tradeoff": {
+    "risk": "low",
+    "what_breaks": "11,464 jobs crashed before reaching their GPU code. They look identical to this bucket but will need a card once the bug is fixed.",
+    "cost_gpu_hours": 2778.0,
+    "cost_usd": 6945.0,
+    "defence": "Offload only jobs that completed without the GPU. Being wrong is cheap and visible: the job fails fast or runs slowly, and its owner resubmits with a GPU flag."
+   }
+  },
+  {
+   "key": "idle_card",
+   "name": "Second GPU sat idle",
+   "full_name": "One card idle beside a working one",
+   "plain": "A multi-GPU job where one card worked and another sat unused for the whole run.",
+   "now": {
+    "jobs": 689,
+    "gpu_hours": 31613.0,
+    "usd": 79032.0,
+    "share_of_bill": 0.0532,
+    "busy_pct": 38.9,
+    "note": "Invisible in the job table, which averages a job's cards. Only the per-card data shows it."
+   },
+   "cut": {
+    "gpu_hours": 7279.0,
+    "usd": 18197.0,
+    "share_of_bucket": 0.2303,
+    "share_of_bill": 0.0123,
+    "basis": "Half of the 14,558 idle card-hours. Right-sizing needs the owner to change code.",
+    "action": "Ask the owners to request one GPU instead of two.",
+    "owner": "Researchers \u2014 this is a code change, not a setting.",
+    "confidence": "medium"
+   },
+   "tradeoff": {
+    "risk": "medium",
+    "what_breaks": "Nothing breaks if we are wrong, but nothing is recovered either. The saving only lands if the owner actually changes the request, and some code genuinely needs the second card later.",
+    "cost_gpu_hours": 7279.0,
+    "cost_usd": 18197.0,
+    "defence": "Treat it as a conversation with a handful of owners rather than a policy. Half-counted here for that reason."
+   }
+  },
+  {
+   "key": "killed_by_clock",
+   "name": "Ran out of time",
+   "full_name": "Busy work destroyed at the time limit",
+   "plain": "The job was computing hard when its time limit expired and the scheduler killed it.",
+   "now": {
+    "jobs": 133,
+    "gpu_hours": 44421.0,
+    "usd": 111052.0,
+    "share_of_bill": 0.0748,
+    "busy_pct": 92.5,
+    "note": "Real science, thrown away. It looks like waste in an outcome chart and is the opposite."
+   },
+   "cut": {
+    "gpu_hours": 0.0,
+    "usd": 0.0,
+    "share_of_bucket": 0.0,
+    "share_of_bill": 0.0,
+    "basis": "Nothing. This is not a cut.",
+    "action": "Checkpointing, so a rerun resumes instead of restarting.",
+    "owner": "Researchers and platform, together.",
+    "confidence": "not a cut"
+   },
+   "tradeoff": {
+    "risk": "not a cut",
+    "what_breaks": "Counting these hours as recoverable promises the CFO capacity that was already doing useful work. Cutting here does not free a GPU; it stops research.",
+    "cost_gpu_hours": 44421.0,
+    "cost_usd": 111052.0,
+    "defence": "Report as lost work in a separate column from savings. The remedy saves reruns, not capacity."
+   }
+  },
+  {
+   "key": "productive",
+   "name": "Used normally",
+   "full_name": "Working normally",
+   "plain": "Everything else: jobs that used the GPU they asked for.",
+   "now": {
+    "jobs": 44162,
+    "gpu_hours": 335406.0,
+    "usd": 838515.0,
+    "share_of_bill": 0.5647,
+    "busy_pct": 52.1,
+    "note": "The majority of the bill, and the part a 20% cut must not touch."
+   },
+   "cut": {
+    "gpu_hours": 0.0,
+    "usd": 0.0,
+    "share_of_bucket": 0.0,
+    "share_of_bill": 0.0,
+    "basis": "Nothing. This is the work the cluster exists for.",
+    "action": "Leave alone.",
+    "owner": "--",
+    "confidence": "not a cut"
+   },
+   "tradeoff": {
+    "risk": "not a cut",
+    "what_breaks": "Any policy that reaches into this bucket is slowing research down, which is the one constraint the CFO was given.",
+    "cost_gpu_hours": 0.0,
+    "cost_usd": 0.0,
+    "defence": "Every rule above is deliberately narrow so it cannot reach these hours."
+   }
+  }
+ ],
+ "tile1": {
+  "title": "Where the money went",
+  "question": "Four months of GPU spending, in three numbers and one picture.",
+  "kpis": [
+   {
+    "value": "$1.49M",
+    "label": "spent on GPU time",
+    "sub": "over four months, 74,849 jobs"
+   },
+   {
+    "value": "39\u00a2",
+    "label": "of each dollar did any computing",
+    "sub": "the rest paid for a card that sat idle"
+   },
+   {
+    "value": "17\u00a2",
+    "label": "of each dollar finished a job",
+    "sub": "computing, and the job completed"
+   }
+  ],
+  "headline": {
+   "usd": 1485010.0,
+   "gpu_hours": 594004.0,
+   "jobs": 74849,
+   "users": 195,
+   "months": 4,
+   "statement": "$1.49M of GPU time over four months, across 74,849 jobs from 195 researchers."
+  },
+  "funnel": [
+   {
+    "label": "We paid for",
+    "gpu_hours": 594004.0,
+    "usd": 1485010.0,
+    "cents": 100,
+    "note": "Every GPU-hour the cluster handed out."
+   },
+   {
+    "label": "The card was computing",
+    "gpu_hours": 228904.0,
+    "usd": 572260.0,
+    "cents": 39,
+    "note": "The rest paid for a reserved card that was not calculating."
+   },
+   {
+    "label": "It produced a finished job",
+    "gpu_hours": 100789.0,
+    "usd": 251972.0,
+    "cents": 17,
+    "note": "Busy and on a job that completed. The gap is the brief's 83%."
+   }
+  ],
+  "by_outcome": [
+   {
+    "outcome": "Finished",
+    "raw": "COMPLETED",
+    "jobs": 45334,
+    "gpu_hours": 229041.0,
+    "usd": 572601.0,
+    "share": 0.3856,
+    "busy_pct": 44.0
+   },
+   {
+    "outcome": "Stopped by its owner",
+    "raw": "CANCELLED",
+    "jobs": 9290,
+    "gpu_hours": 203930.0,
+    "usd": 509824.0,
+    "share": 0.3433,
+    "busy_pct": 34.3
+   },
+   {
+    "outcome": "Ran out of time",
+    "raw": "TIMEOUT",
+    "jobs": 1544,
+    "gpu_hours": 107952.0,
+    "usd": 269879.0,
+    "share": 0.1817,
+    "busy_pct": 40.5
+   },
+   {
+    "outcome": "Crashed",
+    "raw": "FAILED",
+    "jobs": 18587,
+    "gpu_hours": 50033.0,
+    "usd": 125083.0,
+    "share": 0.0842,
+    "busy_pct": 28.7
+   },
+   {
+    "outcome": "Machine died",
+    "raw": "NODE_FAIL",
+    "jobs": 10,
+    "gpu_hours": 2028.0,
+    "usd": 5070.0,
+    "share": 0.0034,
+    "busy_pct": 2.8
+   },
+   {
+    "outcome": "Ended, reason unrecorded",
+    "raw": "UNDECODED_11",
+    "jobs": 83,
+    "gpu_hours": 1021.0,
+    "usd": 2553.0,
+    "share": 0.0017,
+    "busy_pct": 3.2
+   }
+  ],
+  "concentration": {
+   "curve": [
+    {
+     "users": 0,
+     "share": 0.0
+    },
+    {
+     "users": 1,
+     "share": 0.0772
+    },
+    {
+     "users": 2,
+     "share": 0.1452
+    },
+    {
+     "users": 3,
+     "share": 0.2105
+    },
+    {
+     "users": 4,
+     "share": 0.2574
+    },
+    {
+     "users": 5,
+     "share": 0.2978
+    },
+    {
+     "users": 6,
+     "share": 0.332
+    },
+    {
+     "users": 7,
+     "share": 0.3618
+    },
+    {
+     "users": 8,
+     "share": 0.3911
+    },
+    {
+     "users": 9,
+     "share": 0.4198
+    },
+    {
+     "users": 10,
+     "share": 0.4451
+    },
+    {
+     "users": 11,
+     "share": 0.47
+    },
+    {
+     "users": 12,
+     "share": 0.4949
+    },
+    {
+     "users": 13,
+     "share": 0.5177
+    },
+    {
+     "users": 14,
+     "share": 0.5381
+    },
+    {
+     "users": 15,
+     "share": 0.5565
+    },
+    {
+     "users": 16,
+     "share": 0.5726
+    },
+    {
+     "users": 17,
+     "share": 0.5886
+    },
+    {
+     "users": 18,
+     "share": 0.6045
+    },
+    {
+     "users": 19,
+     "share": 0.6193
+    },
+    {
+     "users": 20,
+     "share": 0.6334
+    },
+    {
+     "users": 21,
+     "share": 0.6471
+    },
+    {
+     "users": 22,
+     "share": 0.6603
+    },
+    {
+     "users": 23,
+     "share": 0.6726
+    },
+    {
+     "users": 24,
+     "share": 0.6844
+    },
+    {
+     "users": 25,
+     "share": 0.6954
+    },
+    {
+     "users": 26,
+     "share": 0.706
+    },
+    {
+     "users": 27,
+     "share": 0.7164
+    },
+    {
+     "users": 28,
+     "share": 0.7266
+    },
+    {
+     "users": 29,
+     "share": 0.7367
+    },
+    {
+     "users": 30,
+     "share": 0.7465
+    },
+    {
+     "users": 31,
+     "share": 0.7562
+    },
+    {
+     "users": 32,
+     "share": 0.7657
+    },
+    {
+     "users": 33,
+     "share": 0.7748
+    },
+    {
+     "users": 34,
+     "share": 0.7839
+    },
+    {
+     "users": 35,
+     "share": 0.7922
+    },
+    {
+     "users": 36,
+     "share": 0.8
+    },
+    {
+     "users": 37,
+     "share": 0.8075
+    },
+    {
+     "users": 38,
+     "share": 0.8149
+    },
+    {
+     "users": 39,
+     "share": 0.822
+    },
+    {
+     "users": 40,
+     "share": 0.8286
+    },
+    {
+     "users": 41,
+     "share": 0.8348
+    },
+    {
+     "users": 42,
+     "share": 0.8407
+    },
+    {
+     "users": 43,
+     "share": 0.8465
+    },
+    {
+     "users": 44,
+     "share": 0.8519
+    },
+    {
+     "users": 45,
+     "share": 0.8571
+    },
+    {
+     "users": 46,
+     "share": 0.8621
+    },
+    {
+     "users": 47,
+     "share": 0.867
+    },
+    {
+     "users": 48,
+     "share": 0.8718
+    },
+    {
+     "users": 49,
+     "share": 0.8762
+    },
+    {
+     "users": 50,
+     "share": 0.8805
+    },
+    {
+     "users": 51,
+     "share": 0.8849
+    },
+    {
+     "users": 52,
+     "share": 0.8887
+    },
+    {
+     "users": 53,
+     "share": 0.8924
+    },
+    {
+     "users": 54,
+     "share": 0.8961
+    },
+    {
+     "users": 55,
+     "share": 0.8997
+    },
+    {
+     "users": 56,
+     "share": 0.9031
+    },
+    {
+     "users": 57,
+     "share": 0.9062
+    },
+    {
+     "users": 58,
+     "share": 0.9093
+    },
+    {
+     "users": 59,
+     "share": 0.9122
+    },
+    {
+     "users": 60,
+     "share": 0.9151
+    },
+    {
+     "users": 61,
+     "share": 0.918
+    },
+    {
+     "users": 62,
+     "share": 0.9209
+    },
+    {
+     "users": 63,
+     "share": 0.9237
+    },
+    {
+     "users": 64,
+     "share": 0.9264
+    },
+    {
+     "users": 65,
+     "share": 0.929
+    },
+    {
+     "users": 66,
+     "share": 0.9316
+    },
+    {
+     "users": 67,
+     "share": 0.9342
+    },
+    {
+     "users": 68,
+     "share": 0.9368
+    },
+    {
+     "users": 69,
+     "share": 0.9393
+    },
+    {
+     "users": 70,
+     "share": 0.9418
+    },
+    {
+     "users": 71,
+     "share": 0.9442
+    },
+    {
+     "users": 72,
+     "share": 0.9467
+    },
+    {
+     "users": 73,
+     "share": 0.9491
+    },
+    {
+     "users": 74,
+     "share": 0.9515
+    },
+    {
+     "users": 75,
+     "share": 0.9538
+    },
+    {
+     "users": 76,
+     "share": 0.9561
+    },
+    {
+     "users": 77,
+     "share": 0.9583
+    },
+    {
+     "users": 78,
+     "share": 0.9605
+    },
+    {
+     "users": 79,
+     "share": 0.9625
+    },
+    {
+     "users": 80,
+     "share": 0.9645
+    },
+    {
+     "users": 81,
+     "share": 0.9664
+    },
+    {
+     "users": 82,
+     "share": 0.9682
+    },
+    {
+     "users": 83,
+     "share": 0.9701
+    },
+    {
+     "users": 84,
+     "share": 0.9717
+    },
+    {
+     "users": 85,
+     "share": 0.9733
+    },
+    {
+     "users": 86,
+     "share": 0.9747
+    },
+    {
+     "users": 87,
+     "share": 0.9761
+    },
+    {
+     "users": 88,
+     "share": 0.9773
+    },
+    {
+     "users": 89,
+     "share": 0.9785
+    },
+    {
+     "users": 90,
+     "share": 0.9796
+    },
+    {
+     "users": 91,
+     "share": 0.9806
+    },
+    {
+     "users": 92,
+     "share": 0.9816
+    },
+    {
+     "users": 93,
+     "share": 0.9825
+    },
+    {
+     "users": 94,
+     "share": 0.9834
+    },
+    {
+     "users": 95,
+     "share": 0.9843
+    },
+    {
+     "users": 96,
+     "share": 0.9851
+    },
+    {
+     "users": 97,
+     "share": 0.9859
+    },
+    {
+     "users": 98,
+     "share": 0.9867
+    },
+    {
+     "users": 99,
+     "share": 0.9875
+    },
+    {
+     "users": 100,
+     "share": 0.9882
+    },
+    {
+     "users": 101,
+     "share": 0.9889
+    },
+    {
+     "users": 102,
+     "share": 0.9895
+    },
+    {
+     "users": 103,
+     "share": 0.99
+    },
+    {
+     "users": 104,
+     "share": 0.9905
+    },
+    {
+     "users": 105,
+     "share": 0.9909
+    },
+    {
+     "users": 106,
+     "share": 0.9913
+    },
+    {
+     "users": 107,
+     "share": 0.9917
+    },
+    {
+     "users": 108,
+     "share": 0.9921
+    },
+    {
+     "users": 109,
+     "share": 0.9925
+    },
+    {
+     "users": 110,
+     "share": 0.9929
+    },
+    {
+     "users": 111,
+     "share": 0.9932
+    },
+    {
+     "users": 112,
+     "share": 0.9935
+    },
+    {
+     "users": 113,
+     "share": 0.9938
+    },
+    {
+     "users": 114,
+     "share": 0.9941
+    },
+    {
+     "users": 115,
+     "share": 0.9944
+    },
+    {
+     "users": 116,
+     "share": 0.9947
+    },
+    {
+     "users": 117,
+     "share": 0.995
+    },
+    {
+     "users": 118,
+     "share": 0.9952
+    },
+    {
+     "users": 119,
+     "share": 0.9954
+    },
+    {
+     "users": 120,
+     "share": 0.9957
+    },
+    {
+     "users": 121,
+     "share": 0.9959
+    },
+    {
+     "users": 122,
+     "share": 0.9961
+    },
+    {
+     "users": 123,
+     "share": 0.9963
+    },
+    {
+     "users": 124,
+     "share": 0.9965
+    },
+    {
+     "users": 125,
+     "share": 0.9967
+    },
+    {
+     "users": 126,
+     "share": 0.9969
+    },
+    {
+     "users": 127,
+     "share": 0.997
+    },
+    {
+     "users": 128,
+     "share": 0.9972
+    },
+    {
+     "users": 129,
+     "share": 0.9974
+    },
+    {
+     "users": 130,
+     "share": 0.9975
+    },
+    {
+     "users": 131,
+     "share": 0.9977
+    },
+    {
+     "users": 132,
+     "share": 0.9979
+    },
+    {
+     "users": 133,
+     "share": 0.998
+    },
+    {
+     "users": 134,
+     "share": 0.9981
+    },
+    {
+     "users": 135,
+     "share": 0.9983
+    },
+    {
+     "users": 136,
+     "share": 0.9984
+    },
+    {
+     "users": 137,
+     "share": 0.9985
+    },
+    {
+     "users": 138,
+     "share": 0.9986
+    },
+    {
+     "users": 139,
+     "share": 0.9987
+    },
+    {
+     "users": 140,
+     "share": 0.9988
+    },
+    {
+     "users": 141,
+     "share": 0.9989
+    },
+    {
+     "users": 142,
+     "share": 0.999
+    },
+    {
+     "users": 143,
+     "share": 0.9991
+    },
+    {
+     "users": 144,
+     "share": 0.9991
+    },
+    {
+     "users": 145,
+     "share": 0.9992
+    },
+    {
+     "users": 146,
+     "share": 0.9993
+    },
+    {
+     "users": 147,
+     "share": 0.9993
+    },
+    {
+     "users": 148,
+     "share": 0.9994
+    },
+    {
+     "users": 149,
+     "share": 0.9995
+    },
+    {
+     "users": 150,
+     "share": 0.9995
+    },
+    {
+     "users": 151,
+     "share": 0.9995
+    },
+    {
+     "users": 152,
+     "share": 0.9996
+    },
+    {
+     "users": 153,
+     "share": 0.9996
+    },
+    {
+     "users": 154,
+     "share": 0.9997
+    },
+    {
+     "users": 155,
+     "share": 0.9997
+    },
+    {
+     "users": 156,
+     "share": 0.9997
+    },
+    {
+     "users": 157,
+     "share": 0.9998
+    },
+    {
+     "users": 158,
+     "share": 0.9998
+    },
+    {
+     "users": 159,
+     "share": 0.9998
+    },
+    {
+     "users": 160,
+     "share": 0.9998
+    },
+    {
+     "users": 161,
+     "share": 0.9999
+    },
+    {
+     "users": 162,
+     "share": 0.9999
+    },
+    {
+     "users": 163,
+     "share": 0.9999
+    },
+    {
+     "users": 164,
+     "share": 0.9999
+    },
+    {
+     "users": 165,
+     "share": 0.9999
+    },
+    {
+     "users": 166,
+     "share": 0.9999
+    },
+    {
+     "users": 167,
+     "share": 1.0
+    },
+    {
+     "users": 168,
+     "share": 1.0
+    },
+    {
+     "users": 169,
+     "share": 1.0
+    },
+    {
+     "users": 170,
+     "share": 1.0
+    },
+    {
+     "users": 171,
+     "share": 1.0
+    },
+    {
+     "users": 172,
+     "share": 1.0
+    },
+    {
+     "users": 173,
+     "share": 1.0
+    },
+    {
+     "users": 174,
+     "share": 1.0
+    },
+    {
+     "users": 175,
+     "share": 1.0
+    },
+    {
+     "users": 176,
+     "share": 1.0
+    },
+    {
+     "users": 177,
+     "share": 1.0
+    },
+    {
+     "users": 178,
+     "share": 1.0
+    },
+    {
+     "users": 179,
+     "share": 1.0
+    },
+    {
+     "users": 180,
+     "share": 1.0
+    },
+    {
+     "users": 181,
+     "share": 1.0
+    },
+    {
+     "users": 182,
+     "share": 1.0
+    },
+    {
+     "users": 183,
+     "share": 1.0
+    },
+    {
+     "users": 184,
+     "share": 1.0
+    },
+    {
+     "users": 185,
+     "share": 1.0
+    },
+    {
+     "users": 186,
+     "share": 1.0
+    },
+    {
+     "users": 187,
+     "share": 1.0
+    },
+    {
+     "users": 188,
+     "share": 1.0
+    },
+    {
+     "users": 189,
+     "share": 1.0
+    },
+    {
+     "users": 190,
+     "share": 1.0
+    },
+    {
+     "users": 191,
+     "share": 1.0
+    },
+    {
+     "users": 192,
+     "share": 1.0
+    },
+    {
+     "users": 193,
+     "share": 1.0
+    },
+    {
+     "users": 194,
+     "share": 1.0
+    },
+    {
+     "users": 195,
+     "share": 1.0
+    }
+   ],
+   "markers": [
+    {
+     "users": 5,
+     "share": 0.2978
+    },
+    {
+     "users": 10,
+     "share": 0.4451
+    },
+    {
+     "users": 20,
+     "share": 0.6334
+    },
+    {
+     "users": 50,
+     "share": 0.8805
+    }
+   ],
+   "users_total": 195
+  },
+  "reading": "Read the buckets, not the outcomes. A cancelled job can be a researcher correctly killing a bad run, and a finished job can have barely touched its GPU. What the card was doing matters more than how the job ended."
+ },
+ "tile2": {
+  "title": "Where to cut",
+  "question": "How much of that comes back, and who has to do something?",
+  "kpis": [
+   {
+    "value": "$359K",
+    "label": "we think we can cut",
+    "sub": "24% of the bill, without slowing research down"
+   },
+   {
+    "value": "$297K",
+    "label": "the 20% goal we were given",
+    "sub": "our best guess clears it"
+   },
+   {
+    "value": "$235K",
+    "label": "of that is the safe part",
+    "sub": "GPUs that sat unused for days"
+   }
+  ],
+  "total": {
+   "low": {
+    "gpu_hours": 80767.0,
+    "usd": 201918.0,
+    "share": 0.136,
+    "basis": "Half the CPU-work bucket, plus a 4-hour-grace idle kill. Nothing else counted."
+   },
+   "point": {
+    "gpu_hours": 143763.0,
+    "usd": 359407.0,
+    "share": 0.242,
+    "basis": "The per-bucket column on this tile, added up."
+   },
+   "high": {
+    "gpu_hours": 196364.0,
+    "usd": 490911.0,
+    "share": 0.3306,
+    "basis": "No grace at all, and every idle and idle-card hour counted."
+   }
+  },
+  "wheel": {
+   "before_usd": 1485010.0,
+   "before_gpu_hours": 594004.0,
+   "cut_usd": 359407.0,
+   "cut_gpu_hours": 143763.0,
+   "after_usd": 1125603.0,
+   "after_gpu_hours": 450241.0,
+   "cut_share": 0.242,
+   "segments": [
+    {
+     "key": "never_used",
+     "name": "Reserved, never used",
+     "share_of_bill": 0.1429,
+     "cut_share_of_bill": 0.1378,
+     "kept_share_of_bill": 0.0051,
+     "cut_usd": 204695.0,
+     "kept_usd": 7544.0
+    },
+    {
+     "key": "barely_used",
+     "name": "Barely used",
+     "share_of_bill": 0.1437,
+     "cut_share_of_bill": 0.0712,
+     "kept_share_of_bill": 0.0725,
+     "cut_usd": 105763.0,
+     "kept_usd": 107658.0
+    },
+    {
+     "key": "cpu_work",
+     "name": "Didn't need a GPU",
+     "share_of_bill": 0.0207,
+     "cut_share_of_bill": 0.0207,
+     "kept_share_of_bill": 0.0,
+     "cut_usd": 30751.0,
+     "kept_usd": 0.0
+    },
+    {
+     "key": "idle_card",
+     "name": "Second GPU sat idle",
+     "share_of_bill": 0.0532,
+     "cut_share_of_bill": 0.0123,
+     "kept_share_of_bill": 0.0409,
+     "cut_usd": 18197.0,
+     "kept_usd": 60835.0
+    },
+    {
+     "key": "killed_by_clock",
+     "name": "Ran out of time",
+     "share_of_bill": 0.0748,
+     "cut_share_of_bill": 0.0,
+     "kept_share_of_bill": 0.0748,
+     "cut_usd": 0.0,
+     "kept_usd": 111052.0
+    },
+    {
+     "key": "productive",
+     "name": "Used normally",
+     "share_of_bill": 0.5647,
+     "cut_share_of_bill": 0.0,
+     "kept_share_of_bill": 0.5647,
+     "cut_usd": 0.0,
+     "kept_usd": 838515.0
+    }
+   ]
+  },
+  "target": {
+   "gpu_hours": 118801.0,
+   "usd": 297002.0,
+   "share": 0.2
+  },
+  "clears_target": {
+   "low": false,
+   "point": true,
+   "high": true
+  },
+  "verdict": "The point estimate clears a 20% cut. The cautious reading does not, and falls $95K short. Two thirds of the total is the near-certain part: GPUs that sat at zero for days.",
+  "grace_sweep": {
+   "hours": [
+    0,
+    0.5,
+    1,
+    2,
+    4,
+    8,
+    12,
+    24
+   ],
+   "gpu_hours": {
+    "0": 84896.0,
+    "0.5": 83245.0,
+    "1": 81878.0,
+    "2": 79278.0,
+    "4": 74617.0,
+    "8": 66477.0,
+    "12": 59348.0,
+    "24": 47040.0
+   },
+   "note": "The idle kill barely depends on the grace period, because these jobs sit idle for days. Even a 24-hour grace returns most of the money."
+  },
+  "ranked": [
+   {
+    "rank": 1,
+    "key": "never_used",
+    "name": "Reserved, never used",
+    "usd": 204695.0,
+    "gpu_hours": 81878.0,
+    "action": "End a job whose GPUs have sat at zero for an hour.",
+    "owner": "Platform team \u2014 a scheduler policy, no researcher action needed.",
+    "confidence": "high",
+    "risk": "low"
+   },
+   {
+    "rank": 2,
+    "key": "barely_used",
+    "name": "Barely used",
+    "usd": 105763.0,
+    "gpu_hours": 42305.0,
+    "action": "Investigate the biggest owners before writing any rule.",
+    "owner": "Researchers who own the workflows, with platform support.",
+    "confidence": "low",
+    "risk": "high"
+   },
+   {
+    "rank": 3,
+    "key": "cpu_work",
+    "name": "Didn't need a GPU",
+    "usd": 30751.0,
+    "gpu_hours": 12301.0,
+    "action": "Default these workflows to CPU nodes.",
+    "owner": "Workflow owners \u2014 mostly a launcher default, not per-job.",
+    "confidence": "high",
+    "risk": "low"
+   },
+   {
+    "rank": 4,
+    "key": "idle_card",
+    "name": "Second GPU sat idle",
+    "usd": 18197.0,
+    "gpu_hours": 7279.0,
+    "action": "Ask the owners to request one GPU instead of two.",
+    "owner": "Researchers \u2014 this is a code change, not a setting.",
+    "confidence": "medium",
+    "risk": "medium"
+   }
+  ],
+  "reading": "Same six buckets as the previous section. The only change is the column: what each one gives back, and who has to do something for it to land."
+ },
+ "tile3": {
+  "title": "What it costs if we're wrong",
+  "question": "Each cut assumes something. What breaks if the assumption turns out to be false?",
+  "kpis": [
+   {
+    "value": "$235K",
+    "label": "we are confident about",
+    "sub": "these GPUs were switched on and never touched"
+   },
+   {
+    "value": "$124K",
+    "label": "depends on a judgment call",
+    "sub": "low usage might still be real work"
+   },
+   {
+    "value": "$101K",
+    "label": "of real work we'd kill by mistake",
+    "sub": "if we chased the bigger number and cut all low usage"
+   }
+  ],
+  "risks": [
+   {
+    "claim": "Cut the GPUs that were never touched",
+    "level": "safe",
+    "amount": "$235K",
+    "what_if_wrong": "None of these 2,467 jobs ever ran a calculation, so there is nothing to lose. This is the part to promise."
+   },
+   {
+    "claim": "Also cut anything under 5% usage",
+    "level": "risky",
+    "amount": "$440K",
+    "what_if_wrong": "Tempting, but it kills 2,099 jobs that finished successfully, including $101K of work that was busy in bursts and only looks idle on average."
+   },
+   {
+    "claim": "Reclaim the idle second GPU",
+    "level": "needs people",
+    "amount": "$18K",
+    "what_if_wrong": "No scheduler setting delivers this. Researchers have to change how their code asks for GPUs, so treat it as a target, not a saving."
+   },
+   {
+    "claim": "Count jobs that ran out of time as waste",
+    "level": "not a saving",
+    "amount": "$111K",
+    "what_if_wrong": "These GPUs were working hard when the clock stopped them. The fix is longer limits or checkpointing, which costs money rather than saving it."
+   }
+  ],
+  "simulator": {
+   "graces": [
+    0,
+    0.5,
+    1,
+    2,
+    4,
+    8,
+    12,
+    24
+   ],
+   "thresholds": [
+    0,
+    1,
+    2,
+    5,
+    10,
+    20
+   ],
+   "guards": [
+    {
+     "key": "none",
+     "label": "No guard",
+     "hint": "Kill on average utilization alone."
+    },
+    {
+     "key": "peak0",
+     "label": "Peak must be zero",
+     "hint": "Only jobs whose busiest moment was also 0%."
+    },
+    {
+     "key": "peak20",
+     "label": "Peak under 20%",
+     "hint": "Allows a brief spike, blocks sustained work."
+    }
+   ],
+   "grid": [
+    {
+     "g": 0,
+     "t": 0,
+     "guard": "none",
+     "jobs": 25877,
+     "returns_gpu_hours": 147547.0,
+     "returns_usd": 368868.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 7020,
+     "bursty_jobs_hit": 1106,
+     "bursty_gpu_hours_hit": 22689.0
+    },
+    {
+     "g": 0,
+     "t": 0,
+     "guard": "peak0",
+     "jobs": 19876,
+     "returns_gpu_hours": 97196.0,
+     "returns_usd": 242991.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 4817,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 0,
+     "guard": "peak20",
+     "jobs": 23778,
+     "returns_gpu_hours": 114742.0,
+     "returns_usd": 286856.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 6283,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 1,
+     "guard": "none",
+     "jobs": 27554,
+     "returns_gpu_hours": 160335.0,
+     "returns_usd": 400838.0,
+     "busy_destroyed_gpu_hours": 111.0,
+     "busy_destroyed_usd": 277.0,
+     "completed_jobs_hit": 7867,
+     "bursty_jobs_hit": 1670,
+     "bursty_gpu_hours_hit": 26927.0
+    },
+    {
+     "g": 0,
+     "t": 1,
+     "guard": "peak0",
+     "jobs": 19876,
+     "returns_gpu_hours": 97196.0,
+     "returns_usd": 242991.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 4817,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 1,
+     "guard": "peak20",
+     "jobs": 24554,
+     "returns_gpu_hours": 120318.0,
+     "returns_usd": 300796.0,
+     "busy_destroyed_gpu_hours": 54.0,
+     "busy_destroyed_usd": 135.0,
+     "completed_jobs_hit": 6648,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 2,
+     "guard": "none",
+     "jobs": 28356,
+     "returns_gpu_hours": 164334.0,
+     "returns_usd": 410834.0,
+     "busy_destroyed_gpu_hours": 182.0,
+     "busy_destroyed_usd": 454.0,
+     "completed_jobs_hit": 8273,
+     "bursty_jobs_hit": 1951,
+     "bursty_gpu_hours_hit": 28571.0
+    },
+    {
+     "g": 0,
+     "t": 2,
+     "guard": "peak0",
+     "jobs": 19876,
+     "returns_gpu_hours": 97196.0,
+     "returns_usd": 242991.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 4817,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 2,
+     "guard": "peak20",
+     "jobs": 24883,
+     "returns_gpu_hours": 121389.0,
+     "returns_usd": 303471.0,
+     "busy_destroyed_gpu_hours": 75.0,
+     "busy_destroyed_usd": 189.0,
+     "completed_jobs_hit": 6825,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 3,
+     "guard": "none",
+     "jobs": 30415,
+     "returns_gpu_hours": 186074.0,
+     "returns_usd": 465186.0,
+     "busy_destroyed_gpu_hours": 934.0,
+     "busy_destroyed_usd": 2334.0,
+     "completed_jobs_hit": 9564,
+     "bursty_jobs_hit": 2564,
+     "bursty_gpu_hours_hit": 43217.0
+    },
+    {
+     "g": 0,
+     "t": 3,
+     "guard": "peak0",
+     "jobs": 19876,
+     "returns_gpu_hours": 97196.0,
+     "returns_usd": 242991.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 4817,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 3,
+     "guard": "peak20",
+     "jobs": 25427,
+     "returns_gpu_hours": 124878.0,
+     "returns_usd": 312196.0,
+     "busy_destroyed_gpu_hours": 227.0,
+     "busy_destroyed_usd": 567.0,
+     "completed_jobs_hit": 7249,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 4,
+     "guard": "none",
+     "jobs": 32961,
+     "returns_gpu_hours": 206067.0,
+     "returns_usd": 515168.0,
+     "busy_destroyed_gpu_hours": 2479.0,
+     "busy_destroyed_usd": 6197.0,
+     "completed_jobs_hit": 11165,
+     "bursty_jobs_hit": 2564,
+     "bursty_gpu_hours_hit": 43217.0
+    },
+    {
+     "g": 0,
+     "t": 4,
+     "guard": "peak0",
+     "jobs": 19876,
+     "returns_gpu_hours": 97196.0,
+     "returns_usd": 242991.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 4817,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 4,
+     "guard": "peak20",
+     "jobs": 25651,
+     "returns_gpu_hours": 126771.0,
+     "returns_usd": 316927.0,
+     "busy_destroyed_gpu_hours": 388.0,
+     "busy_destroyed_usd": 969.0,
+     "completed_jobs_hit": 7414,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 5,
+     "guard": "none",
+     "jobs": 41500,
+     "returns_gpu_hours": 254512.0,
+     "returns_usd": 636279.0,
+     "busy_destroyed_gpu_hours": 10060.0,
+     "busy_destroyed_usd": 25151.0,
+     "completed_jobs_hit": 17946,
+     "bursty_jobs_hit": 2564,
+     "bursty_gpu_hours_hit": 43217.0
+    },
+    {
+     "g": 0,
+     "t": 5,
+     "guard": "peak0",
+     "jobs": 19876,
+     "returns_gpu_hours": 97196.0,
+     "returns_usd": 242991.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 4817,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 0,
+     "t": 5,
+     "guard": "peak20",
+     "jobs": 25715,
+     "returns_gpu_hours": 127184.0,
+     "returns_usd": 317960.0,
+     "busy_destroyed_gpu_hours": 438.0,
+     "busy_destroyed_usd": 1096.0,
+     "completed_jobs_hit": 7465,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 0,
+     "guard": "none",
+     "jobs": 5117,
+     "returns_gpu_hours": 143394.0,
+     "returns_usd": 358485.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 1668,
+     "bursty_jobs_hit": 834,
+     "bursty_gpu_hours_hit": 21991.0
+    },
+    {
+     "g": 1,
+     "t": 0,
+     "guard": "peak0",
+     "jobs": 2801,
+     "returns_gpu_hours": 94951.0,
+     "returns_usd": 237378.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 691,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 0,
+     "guard": "peak20",
+     "jobs": 3718,
+     "returns_gpu_hours": 111719.0,
+     "returns_usd": 279297.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 1144,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 1,
+     "guard": "none",
+     "jobs": 5710,
+     "returns_gpu_hours": 155699.0,
+     "returns_usd": 389247.0,
+     "busy_destroyed_gpu_hours": 106.0,
+     "busy_destroyed_usd": 266.0,
+     "completed_jobs_hit": 2039,
+     "bursty_jobs_hit": 1195,
+     "bursty_gpu_hours_hit": 25931.0
+    },
+    {
+     "g": 1,
+     "t": 1,
+     "guard": "peak0",
+     "jobs": 2801,
+     "returns_gpu_hours": 94951.0,
+     "returns_usd": 237378.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 691,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 1,
+     "guard": "peak20",
+     "jobs": 3849,
+     "returns_gpu_hours": 117199.0,
+     "returns_usd": 292999.0,
+     "busy_destroyed_gpu_hours": 53.0,
+     "busy_destroyed_usd": 133.0,
+     "completed_jobs_hit": 1188,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 2,
+     "guard": "none",
+     "jobs": 5975,
+     "returns_gpu_hours": 159443.0,
+     "returns_usd": 398609.0,
+     "busy_destroyed_gpu_hours": 173.0,
+     "busy_destroyed_usd": 432.0,
+     "completed_jobs_hit": 2199,
+     "bursty_jobs_hit": 1324,
+     "bursty_gpu_hours_hit": 27418.0
+    },
+    {
+     "g": 1,
+     "t": 2,
+     "guard": "peak0",
+     "jobs": 2801,
+     "returns_gpu_hours": 94951.0,
+     "returns_usd": 237378.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 691,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 2,
+     "guard": "peak20",
+     "jobs": 3918,
+     "returns_gpu_hours": 118223.0,
+     "returns_usd": 295556.0,
+     "busy_destroyed_gpu_hours": 74.0,
+     "busy_destroyed_usd": 184.0,
+     "completed_jobs_hit": 1238,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 3,
+     "guard": "none",
+     "jobs": 6735,
+     "returns_gpu_hours": 180347.0,
+     "returns_usd": 450867.0,
+     "busy_destroyed_gpu_hours": 894.0,
+     "busy_destroyed_usd": 2235.0,
+     "completed_jobs_hit": 2741,
+     "bursty_jobs_hit": 1652,
+     "bursty_gpu_hours_hit": 41632.0
+    },
+    {
+     "g": 1,
+     "t": 3,
+     "guard": "peak0",
+     "jobs": 2801,
+     "returns_gpu_hours": 94951.0,
+     "returns_usd": 237378.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 691,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 3,
+     "guard": "peak20",
+     "jobs": 4105,
+     "returns_gpu_hours": 121571.0,
+     "returns_usd": 303927.0,
+     "busy_destroyed_gpu_hours": 219.0,
+     "busy_destroyed_usd": 548.0,
+     "completed_jobs_hit": 1406,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 4,
+     "guard": "none",
+     "jobs": 7689,
+     "returns_gpu_hours": 199169.0,
+     "returns_usd": 497922.0,
+     "busy_destroyed_gpu_hours": 2346.0,
+     "busy_destroyed_usd": 5866.0,
+     "completed_jobs_hit": 3220,
+     "bursty_jobs_hit": 1652,
+     "bursty_gpu_hours_hit": 41632.0
+    },
+    {
+     "g": 1,
+     "t": 4,
+     "guard": "peak0",
+     "jobs": 2801,
+     "returns_gpu_hours": 94951.0,
+     "returns_usd": 237378.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 691,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 4,
+     "guard": "peak20",
+     "jobs": 4198,
+     "returns_gpu_hours": 123398.0,
+     "returns_usd": 308494.0,
+     "busy_destroyed_gpu_hours": 375.0,
+     "busy_destroyed_usd": 936.0,
+     "completed_jobs_hit": 1488,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 5,
+     "guard": "none",
+     "jobs": 10690,
+     "returns_gpu_hours": 244480.0,
+     "returns_usd": 611200.0,
+     "busy_destroyed_gpu_hours": 9461.0,
+     "busy_destroyed_usd": 23652.0,
+     "completed_jobs_hit": 5197,
+     "bursty_jobs_hit": 1652,
+     "bursty_gpu_hours_hit": 41632.0
+    },
+    {
+     "g": 1,
+     "t": 5,
+     "guard": "peak0",
+     "jobs": 2801,
+     "returns_gpu_hours": 94951.0,
+     "returns_usd": 237378.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 691,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 1,
+     "t": 5,
+     "guard": "peak20",
+     "jobs": 4236,
+     "returns_gpu_hours": 123789.0,
+     "returns_usd": 309472.0,
+     "busy_destroyed_gpu_hours": 423.0,
+     "busy_destroyed_usd": 1056.0,
+     "completed_jobs_hit": 1521,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 0,
+     "guard": "none",
+     "jobs": 4300,
+     "returns_gpu_hours": 140326.0,
+     "returns_usd": 350816.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 1108,
+     "bursty_jobs_hit": 764,
+     "bursty_gpu_hours_hit": 21412.0
+    },
+    {
+     "g": 2,
+     "t": 0,
+     "guard": "peak0",
+     "jobs": 2467,
+     "returns_gpu_hours": 93267.0,
+     "returns_usd": 233167.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 430,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 0,
+     "guard": "peak20",
+     "jobs": 3054,
+     "returns_gpu_hours": 109544.0,
+     "returns_usd": 273861.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 646,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 1,
+     "guard": "none",
+     "jobs": 4830,
+     "returns_gpu_hours": 152248.0,
+     "returns_usd": 380620.0,
+     "busy_destroyed_gpu_hours": 103.0,
+     "busy_destroyed_usd": 258.0,
+     "completed_jobs_hit": 1453,
+     "bursty_jobs_hit": 1076,
+     "bursty_gpu_hours_hit": 25114.0
+    },
+    {
+     "g": 2,
+     "t": 1,
+     "guard": "peak0",
+     "jobs": 2467,
+     "returns_gpu_hours": 93267.0,
+     "returns_usd": 233167.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 430,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 1,
+     "guard": "peak20",
+     "jobs": 3179,
+     "returns_gpu_hours": 114942.0,
+     "returns_usd": 287355.0,
+     "busy_destroyed_gpu_hours": 53.0,
+     "busy_destroyed_usd": 131.0,
+     "completed_jobs_hit": 690,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 2,
+     "guard": "none",
+     "jobs": 5064,
+     "returns_gpu_hours": 155817.0,
+     "returns_usd": 389542.0,
+     "busy_destroyed_gpu_hours": 166.0,
+     "busy_destroyed_usd": 415.0,
+     "completed_jobs_hit": 1595,
+     "bursty_jobs_hit": 1191,
+     "bursty_gpu_hours_hit": 26501.0
+    },
+    {
+     "g": 2,
+     "t": 2,
+     "guard": "peak0",
+     "jobs": 2467,
+     "returns_gpu_hours": 93267.0,
+     "returns_usd": 233167.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 430,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 2,
+     "guard": "peak20",
+     "jobs": 3238,
+     "returns_gpu_hours": 115931.0,
+     "returns_usd": 289829.0,
+     "busy_destroyed_gpu_hours": 72.0,
+     "busy_destroyed_usd": 181.0,
+     "completed_jobs_hit": 731,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 3,
+     "guard": "none",
+     "jobs": 5737,
+     "returns_gpu_hours": 176166.0,
+     "returns_usd": 440416.0,
+     "busy_destroyed_gpu_hours": 867.0,
+     "busy_destroyed_usd": 2168.0,
+     "completed_jobs_hit": 2099,
+     "bursty_jobs_hit": 1488,
+     "bursty_gpu_hours_hit": 40397.0
+    },
+    {
+     "g": 2,
+     "t": 3,
+     "guard": "peak0",
+     "jobs": 2467,
+     "returns_gpu_hours": 93267.0,
+     "returns_usd": 233167.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 430,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 3,
+     "guard": "peak20",
+     "jobs": 3407,
+     "returns_gpu_hours": 119189.0,
+     "returns_usd": 297973.0,
+     "busy_destroyed_gpu_hours": 214.0,
+     "busy_destroyed_usd": 535.0,
+     "completed_jobs_hit": 890,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 4,
+     "guard": "none",
+     "jobs": 6374,
+     "returns_gpu_hours": 194323.0,
+     "returns_usd": 485808.0,
+     "busy_destroyed_gpu_hours": 2268.0,
+     "busy_destroyed_usd": 5669.0,
+     "completed_jobs_hit": 2491,
+     "bursty_jobs_hit": 1488,
+     "bursty_gpu_hours_hit": 40397.0
+    },
+    {
+     "g": 2,
+     "t": 4,
+     "guard": "peak0",
+     "jobs": 2467,
+     "returns_gpu_hours": 93267.0,
+     "returns_usd": 233167.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 430,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 4,
+     "guard": "peak20",
+     "jobs": 3496,
+     "returns_gpu_hours": 120967.0,
+     "returns_usd": 302417.0,
+     "busy_destroyed_gpu_hours": 365.0,
+     "busy_destroyed_usd": 913.0,
+     "completed_jobs_hit": 970,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 5,
+     "guard": "none",
+     "jobs": 8346,
+     "returns_gpu_hours": 237887.0,
+     "returns_usd": 594717.0,
+     "busy_destroyed_gpu_hours": 9112.0,
+     "busy_destroyed_usd": 22779.0,
+     "completed_jobs_hit": 3632,
+     "bursty_jobs_hit": 1488,
+     "bursty_gpu_hours_hit": 40397.0
+    },
+    {
+     "g": 2,
+     "t": 5,
+     "guard": "peak0",
+     "jobs": 2467,
+     "returns_gpu_hours": 93267.0,
+     "returns_usd": 233167.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 430,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 2,
+     "t": 5,
+     "guard": "peak20",
+     "jobs": 3530,
+     "returns_gpu_hours": 121340.0,
+     "returns_usd": 303351.0,
+     "busy_destroyed_gpu_hours": 411.0,
+     "busy_destroyed_usd": 1028.0,
+     "completed_jobs_hit": 999,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 0,
+     "guard": "none",
+     "jobs": 3761,
+     "returns_gpu_hours": 135047.0,
+     "returns_usd": 337617.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 831,
+     "bursty_jobs_hit": 590,
+     "bursty_gpu_hours_hit": 20426.0
+    },
+    {
+     "g": 3,
+     "t": 0,
+     "guard": "peak0",
+     "jobs": 2248,
+     "returns_gpu_hours": 90175.0,
+     "returns_usd": 225438.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 354,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 0,
+     "guard": "peak20",
+     "jobs": 2754,
+     "returns_gpu_hours": 105773.0,
+     "returns_usd": 264433.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 532,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 1,
+     "guard": "none",
+     "jobs": 4044,
+     "returns_gpu_hours": 146384.0,
+     "returns_usd": 365960.0,
+     "busy_destroyed_gpu_hours": 98.0,
+     "busy_destroyed_usd": 245.0,
+     "completed_jobs_hit": 962,
+     "bursty_jobs_hit": 700,
+     "bursty_gpu_hours_hit": 23816.0
+    },
+    {
+     "g": 3,
+     "t": 1,
+     "guard": "peak0",
+     "jobs": 2248,
+     "returns_gpu_hours": 90175.0,
+     "returns_usd": 225438.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 354,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 1,
+     "guard": "peak20",
+     "jobs": 2858,
+     "returns_gpu_hours": 111013.0,
+     "returns_usd": 277532.0,
+     "busy_destroyed_gpu_hours": 51.0,
+     "busy_destroyed_usd": 128.0,
+     "completed_jobs_hit": 564,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 2,
+     "guard": "none",
+     "jobs": 4198,
+     "returns_gpu_hours": 149680.0,
+     "returns_usd": 374201.0,
+     "busy_destroyed_gpu_hours": 156.0,
+     "busy_destroyed_usd": 390.0,
+     "completed_jobs_hit": 1038,
+     "bursty_jobs_hit": 770,
+     "bursty_gpu_hours_hit": 25051.0
+    },
+    {
+     "g": 3,
+     "t": 2,
+     "guard": "peak0",
+     "jobs": 2248,
+     "returns_gpu_hours": 90175.0,
+     "returns_usd": 225438.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 354,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 2,
+     "guard": "peak20",
+     "jobs": 2909,
+     "returns_gpu_hours": 111943.0,
+     "returns_usd": 279859.0,
+     "busy_destroyed_gpu_hours": 70.0,
+     "busy_destroyed_usd": 174.0,
+     "completed_jobs_hit": 601,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 3,
+     "guard": "none",
+     "jobs": 4600,
+     "returns_gpu_hours": 169188.0,
+     "returns_usd": 422969.0,
+     "busy_destroyed_gpu_hours": 826.0,
+     "busy_destroyed_usd": 2065.0,
+     "completed_jobs_hit": 1308,
+     "bursty_jobs_hit": 875,
+     "bursty_gpu_hours_hit": 38484.0
+    },
+    {
+     "g": 3,
+     "t": 3,
+     "guard": "peak0",
+     "jobs": 2248,
+     "returns_gpu_hours": 90175.0,
+     "returns_usd": 225438.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 354,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 3,
+     "guard": "peak20",
+     "jobs": 3064,
+     "returns_gpu_hours": 115035.0,
+     "returns_usd": 287587.0,
+     "busy_destroyed_gpu_hours": 204.0,
+     "busy_destroyed_usd": 511.0,
+     "completed_jobs_hit": 750,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 4,
+     "guard": "none",
+     "jobs": 5055,
+     "returns_gpu_hours": 186409.0,
+     "returns_usd": 466023.0,
+     "busy_destroyed_gpu_hours": 2153.0,
+     "busy_destroyed_usd": 5383.0,
+     "completed_jobs_hit": 1578,
+     "bursty_jobs_hit": 875,
+     "bursty_gpu_hours_hit": 38484.0
+    },
+    {
+     "g": 3,
+     "t": 4,
+     "guard": "peak0",
+     "jobs": 2248,
+     "returns_gpu_hours": 90175.0,
+     "returns_usd": 225438.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 354,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 4,
+     "guard": "peak20",
+     "jobs": 3143,
+     "returns_gpu_hours": 116720.0,
+     "returns_usd": 291800.0,
+     "busy_destroyed_gpu_hours": 348.0,
+     "busy_destroyed_usd": 870.0,
+     "completed_jobs_hit": 824,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 5,
+     "guard": "none",
+     "jobs": 6558,
+     "returns_gpu_hours": 227629.0,
+     "returns_usd": 569072.0,
+     "busy_destroyed_gpu_hours": 8634.0,
+     "busy_destroyed_usd": 21584.0,
+     "completed_jobs_hit": 2388,
+     "bursty_jobs_hit": 875,
+     "bursty_gpu_hours_hit": 38484.0
+    },
+    {
+     "g": 3,
+     "t": 5,
+     "guard": "peak0",
+     "jobs": 2248,
+     "returns_gpu_hours": 90175.0,
+     "returns_usd": 225438.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 354,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 3,
+     "t": 5,
+     "guard": "peak20",
+     "jobs": 3176,
+     "returns_gpu_hours": 117060.0,
+     "returns_usd": 292650.0,
+     "busy_destroyed_gpu_hours": 390.0,
+     "busy_destroyed_usd": 974.0,
+     "completed_jobs_hit": 852,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 0,
+     "guard": "none",
+     "jobs": 3320,
+     "returns_gpu_hours": 125765.0,
+     "returns_usd": 314412.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 692,
+     "bursty_jobs_hit": 539,
+     "bursty_gpu_hours_hit": 18682.0
+    },
+    {
+     "g": 4,
+     "t": 0,
+     "guard": "peak0",
+     "jobs": 1972,
+     "returns_gpu_hours": 84728.0,
+     "returns_usd": 211820.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 285,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 0,
+     "guard": "peak20",
+     "jobs": 2424,
+     "returns_gpu_hours": 99141.0,
+     "returns_usd": 247853.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 442,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 1,
+     "guard": "none",
+     "jobs": 3522,
+     "returns_gpu_hours": 136341.0,
+     "returns_usd": 340853.0,
+     "busy_destroyed_gpu_hours": 91.0,
+     "busy_destroyed_usd": 229.0,
+     "completed_jobs_hit": 766,
+     "bursty_jobs_hit": 605,
+     "bursty_gpu_hours_hit": 21753.0
+    },
+    {
+     "g": 4,
+     "t": 1,
+     "guard": "peak0",
+     "jobs": 1972,
+     "returns_gpu_hours": 84728.0,
+     "returns_usd": 211820.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 285,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 1,
+     "guard": "peak20",
+     "jobs": 2515,
+     "returns_gpu_hours": 104114.0,
+     "returns_usd": 260285.0,
+     "busy_destroyed_gpu_hours": 49.0,
+     "busy_destroyed_usd": 122.0,
+     "completed_jobs_hit": 465,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 2,
+     "guard": "none",
+     "jobs": 3632,
+     "returns_gpu_hours": 139266.0,
+     "returns_usd": 348166.0,
+     "busy_destroyed_gpu_hours": 143.0,
+     "busy_destroyed_usd": 357.0,
+     "completed_jobs_hit": 826,
+     "bursty_jobs_hit": 651,
+     "bursty_gpu_hours_hit": 22799.0
+    },
+    {
+     "g": 4,
+     "t": 2,
+     "guard": "peak0",
+     "jobs": 1972,
+     "returns_gpu_hours": 84728.0,
+     "returns_usd": 211820.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 285,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 2,
+     "guard": "peak20",
+     "jobs": 2556,
+     "returns_gpu_hours": 104952.0,
+     "returns_usd": 262381.0,
+     "busy_destroyed_gpu_hours": 66.0,
+     "busy_destroyed_usd": 164.0,
+     "completed_jobs_hit": 496,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 3,
+     "guard": "none",
+     "jobs": 3956,
+     "returns_gpu_hours": 157526.0,
+     "returns_usd": 393814.0,
+     "busy_destroyed_gpu_hours": 767.0,
+     "busy_destroyed_usd": 1916.0,
+     "completed_jobs_hit": 1060,
+     "bursty_jobs_hit": 720,
+     "bursty_gpu_hours_hit": 35601.0
+    },
+    {
+     "g": 4,
+     "t": 3,
+     "guard": "peak0",
+     "jobs": 1972,
+     "returns_gpu_hours": 84728.0,
+     "returns_usd": 211820.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 285,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 3,
+     "guard": "peak20",
+     "jobs": 2706,
+     "returns_gpu_hours": 107730.0,
+     "returns_usd": 269324.0,
+     "busy_destroyed_gpu_hours": 187.0,
+     "busy_destroyed_usd": 467.0,
+     "completed_jobs_hit": 641,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 4,
+     "guard": "none",
+     "jobs": 4297,
+     "returns_gpu_hours": 173526.0,
+     "returns_usd": 433814.0,
+     "busy_destroyed_gpu_hours": 1997.0,
+     "busy_destroyed_usd": 4993.0,
+     "completed_jobs_hit": 1240,
+     "bursty_jobs_hit": 720,
+     "bursty_gpu_hours_hit": 35601.0
+    },
+    {
+     "g": 4,
+     "t": 4,
+     "guard": "peak0",
+     "jobs": 1972,
+     "returns_gpu_hours": 84728.0,
+     "returns_usd": 211820.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 285,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 4,
+     "guard": "peak20",
+     "jobs": 2773,
+     "returns_gpu_hours": 109271.0,
+     "returns_usd": 273178.0,
+     "busy_destroyed_gpu_hours": 318.0,
+     "busy_destroyed_usd": 794.0,
+     "completed_jobs_hit": 704,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 5,
+     "guard": "none",
+     "jobs": 5541,
+     "returns_gpu_hours": 210947.0,
+     "returns_usd": 527368.0,
+     "busy_destroyed_gpu_hours": 7884.0,
+     "busy_destroyed_usd": 19710.0,
+     "completed_jobs_hit": 1945,
+     "bursty_jobs_hit": 720,
+     "bursty_gpu_hours_hit": 35601.0
+    },
+    {
+     "g": 4,
+     "t": 5,
+     "guard": "peak0",
+     "jobs": 1972,
+     "returns_gpu_hours": 84728.0,
+     "returns_usd": 211820.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 285,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 4,
+     "t": 5,
+     "guard": "peak20",
+     "jobs": 2798,
+     "returns_gpu_hours": 109553.0,
+     "returns_usd": 273883.0,
+     "busy_destroyed_gpu_hours": 352.0,
+     "busy_destroyed_usd": 880.0,
+     "completed_jobs_hit": 725,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 0,
+     "guard": "none",
+     "jobs": 2835,
+     "returns_gpu_hours": 109574.0,
+     "returns_usd": 273935.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 558,
+     "bursty_jobs_hit": 467,
+     "bursty_gpu_hours_hit": 15524.0
+    },
+    {
+     "g": 5,
+     "t": 0,
+     "guard": "peak0",
+     "jobs": 1687,
+     "returns_gpu_hours": 75364.0,
+     "returns_usd": 188409.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 235,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 0,
+     "guard": "peak20",
+     "jobs": 2089,
+     "returns_gpu_hours": 87645.0,
+     "returns_usd": 219112.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 384,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 1,
+     "guard": "none",
+     "jobs": 2985,
+     "returns_gpu_hours": 118927.0,
+     "returns_usd": 297317.0,
+     "busy_destroyed_gpu_hours": 82.0,
+     "busy_destroyed_usd": 204.0,
+     "completed_jobs_hit": 605,
+     "bursty_jobs_hit": 510,
+     "bursty_gpu_hours_hit": 18090.0
+    },
+    {
+     "g": 5,
+     "t": 1,
+     "guard": "peak0",
+     "jobs": 1687,
+     "returns_gpu_hours": 75364.0,
+     "returns_usd": 188409.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 235,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 1,
+     "guard": "peak20",
+     "jobs": 2170,
+     "returns_gpu_hours": 92116.0,
+     "returns_usd": 230291.0,
+     "busy_destroyed_gpu_hours": 45.0,
+     "busy_destroyed_usd": 112.0,
+     "completed_jobs_hit": 407,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 2,
+     "guard": "none",
+     "jobs": 3055,
+     "returns_gpu_hours": 121307.0,
+     "returns_usd": 303268.0,
+     "busy_destroyed_gpu_hours": 123.0,
+     "busy_destroyed_usd": 308.0,
+     "completed_jobs_hit": 641,
+     "bursty_jobs_hit": 532,
+     "bursty_gpu_hours_hit": 18888.0
+    },
+    {
+     "g": 5,
+     "t": 2,
+     "guard": "peak0",
+     "jobs": 1687,
+     "returns_gpu_hours": 75364.0,
+     "returns_usd": 188409.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 235,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 2,
+     "guard": "peak20",
+     "jobs": 2207,
+     "returns_gpu_hours": 92794.0,
+     "returns_usd": 231985.0,
+     "busy_destroyed_gpu_hours": 58.0,
+     "busy_destroyed_usd": 146.0,
+     "completed_jobs_hit": 435,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 3,
+     "guard": "none",
+     "jobs": 3308,
+     "returns_gpu_hours": 137529.0,
+     "returns_usd": 343824.0,
+     "busy_destroyed_gpu_hours": 671.0,
+     "busy_destroyed_usd": 1677.0,
+     "completed_jobs_hit": 827,
+     "bursty_jobs_hit": 574,
+     "bursty_gpu_hours_hit": 30706.0
+    },
+    {
+     "g": 5,
+     "t": 3,
+     "guard": "peak0",
+     "jobs": 1687,
+     "returns_gpu_hours": 75364.0,
+     "returns_usd": 188409.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 235,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 3,
+     "guard": "peak20",
+     "jobs": 2353,
+     "returns_gpu_hours": 94959.0,
+     "returns_usd": 237398.0,
+     "busy_destroyed_gpu_hours": 153.0,
+     "busy_destroyed_usd": 382.0,
+     "completed_jobs_hit": 577,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 4,
+     "guard": "none",
+     "jobs": 3562,
+     "returns_gpu_hours": 151661.0,
+     "returns_usd": 379152.0,
+     "busy_destroyed_gpu_hours": 1753.0,
+     "busy_destroyed_usd": 4384.0,
+     "completed_jobs_hit": 950,
+     "bursty_jobs_hit": 574,
+     "bursty_gpu_hours_hit": 30706.0
+    },
+    {
+     "g": 5,
+     "t": 4,
+     "guard": "peak0",
+     "jobs": 1687,
+     "returns_gpu_hours": 75364.0,
+     "returns_usd": 188409.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 235,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 4,
+     "guard": "peak20",
+     "jobs": 2414,
+     "returns_gpu_hours": 96247.0,
+     "returns_usd": 240618.0,
+     "busy_destroyed_gpu_hours": 261.0,
+     "busy_destroyed_usd": 653.0,
+     "completed_jobs_hit": 635,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 5,
+     "guard": "none",
+     "jobs": 4425,
+     "returns_gpu_hours": 183141.0,
+     "returns_usd": 457853.0,
+     "busy_destroyed_gpu_hours": 6718.0,
+     "busy_destroyed_usd": 16794.0,
+     "completed_jobs_hit": 1437,
+     "bursty_jobs_hit": 574,
+     "bursty_gpu_hours_hit": 30706.0
+    },
+    {
+     "g": 5,
+     "t": 5,
+     "guard": "peak0",
+     "jobs": 1687,
+     "returns_gpu_hours": 75364.0,
+     "returns_usd": 188409.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 235,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 5,
+     "t": 5,
+     "guard": "peak20",
+     "jobs": 2432,
+     "returns_gpu_hours": 96441.0,
+     "returns_usd": 241104.0,
+     "busy_destroyed_gpu_hours": 285.0,
+     "busy_destroyed_usd": 713.0,
+     "completed_jobs_hit": 649,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 0,
+     "guard": "none",
+     "jobs": 2447,
+     "returns_gpu_hours": 95640.0,
+     "returns_usd": 239100.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 471,
+     "bursty_jobs_hit": 408,
+     "bursty_gpu_hours_hit": 12775.0
+    },
+    {
+     "g": 6,
+     "t": 0,
+     "guard": "peak0",
+     "jobs": 1449,
+     "returns_gpu_hours": 67281.0,
+     "returns_usd": 168203.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 187,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 0,
+     "guard": "peak20",
+     "jobs": 1788,
+     "returns_gpu_hours": 77697.0,
+     "returns_usd": 194242.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 319,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 1,
+     "guard": "none",
+     "jobs": 2573,
+     "returns_gpu_hours": 104141.0,
+     "returns_usd": 260352.0,
+     "busy_destroyed_gpu_hours": 74.0,
+     "busy_destroyed_usd": 186.0,
+     "completed_jobs_hit": 508,
+     "bursty_jobs_hit": 438,
+     "bursty_gpu_hours_hit": 14958.0
+    },
+    {
+     "g": 6,
+     "t": 1,
+     "guard": "peak0",
+     "jobs": 1449,
+     "returns_gpu_hours": 67281.0,
+     "returns_usd": 168203.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 187,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 1,
+     "guard": "peak20",
+     "jobs": 1865,
+     "returns_gpu_hours": 81844.0,
+     "returns_usd": 204609.0,
+     "busy_destroyed_gpu_hours": 41.0,
+     "busy_destroyed_usd": 104.0,
+     "completed_jobs_hit": 342,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 2,
+     "guard": "none",
+     "jobs": 2632,
+     "returns_gpu_hours": 106047.0,
+     "returns_usd": 265118.0,
+     "busy_destroyed_gpu_hours": 108.0,
+     "busy_destroyed_usd": 269.0,
+     "completed_jobs_hit": 541,
+     "bursty_jobs_hit": 453,
+     "bursty_gpu_hours_hit": 15537.0
+    },
+    {
+     "g": 6,
+     "t": 2,
+     "guard": "peak0",
+     "jobs": 1449,
+     "returns_gpu_hours": 67281.0,
+     "returns_usd": 168203.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 187,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 2,
+     "guard": "peak20",
+     "jobs": 1900,
+     "returns_gpu_hours": 82373.0,
+     "returns_usd": 205933.0,
+     "busy_destroyed_gpu_hours": 52.0,
+     "busy_destroyed_usd": 130.0,
+     "completed_jobs_hit": 369,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 3,
+     "guard": "none",
+     "jobs": 2856,
+     "returns_gpu_hours": 120464.0,
+     "returns_usd": 301160.0,
+     "busy_destroyed_gpu_hours": 587.0,
+     "busy_destroyed_usd": 1467.0,
+     "completed_jobs_hit": 707,
+     "bursty_jobs_hit": 488,
+     "bursty_gpu_hours_hit": 26478.0
+    },
+    {
+     "g": 6,
+     "t": 3,
+     "guard": "peak0",
+     "jobs": 1449,
+     "returns_gpu_hours": 67281.0,
+     "returns_usd": 168203.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 187,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 3,
+     "guard": "peak20",
+     "jobs": 2038,
+     "returns_gpu_hours": 83954.0,
+     "returns_usd": 209884.0,
+     "busy_destroyed_gpu_hours": 121.0,
+     "busy_destroyed_usd": 303.0,
+     "completed_jobs_hit": 503,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 4,
+     "guard": "none",
+     "jobs": 3062,
+     "returns_gpu_hours": 133144.0,
+     "returns_usd": 332861.0,
+     "busy_destroyed_gpu_hours": 1557.0,
+     "busy_destroyed_usd": 3893.0,
+     "completed_jobs_hit": 811,
+     "bursty_jobs_hit": 488,
+     "bursty_gpu_hours_hit": 26478.0
+    },
+    {
+     "g": 6,
+     "t": 4,
+     "guard": "peak0",
+     "jobs": 1449,
+     "returns_gpu_hours": 67281.0,
+     "returns_usd": 168203.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 187,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 4,
+     "guard": "peak20",
+     "jobs": 2096,
+     "returns_gpu_hours": 85003.0,
+     "returns_usd": 212508.0,
+     "busy_destroyed_gpu_hours": 208.0,
+     "busy_destroyed_usd": 521.0,
+     "completed_jobs_hit": 558,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 5,
+     "guard": "none",
+     "jobs": 3651,
+     "returns_gpu_hours": 160227.0,
+     "returns_usd": 400567.0,
+     "busy_destroyed_gpu_hours": 5848.0,
+     "busy_destroyed_usd": 14620.0,
+     "completed_jobs_hit": 1122,
+     "bursty_jobs_hit": 488,
+     "bursty_gpu_hours_hit": 26478.0
+    },
+    {
+     "g": 6,
+     "t": 5,
+     "guard": "peak0",
+     "jobs": 1449,
+     "returns_gpu_hours": 67281.0,
+     "returns_usd": 168203.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 187,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 6,
+     "t": 5,
+     "guard": "peak20",
+     "jobs": 2104,
+     "returns_gpu_hours": 85152.0,
+     "returns_usd": 212880.0,
+     "busy_destroyed_gpu_hours": 227.0,
+     "busy_destroyed_usd": 567.0,
+     "completed_jobs_hit": 564,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 0,
+     "guard": "none",
+     "jobs": 1180,
+     "returns_gpu_hours": 71596.0,
+     "returns_usd": 178990.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 145,
+     "bursty_jobs_hit": 222,
+     "bursty_gpu_hours_hit": 8017.0
+    },
+    {
+     "g": 7,
+     "t": 0,
+     "guard": "peak0",
+     "jobs": 764,
+     "returns_gpu_hours": 53248.0,
+     "returns_usd": 133121.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 89,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 0,
+     "guard": "peak20",
+     "jobs": 881,
+     "returns_gpu_hours": 60646.0,
+     "returns_usd": 151616.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 117,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 1,
+     "guard": "none",
+     "jobs": 1262,
+     "returns_gpu_hours": 78388.0,
+     "returns_usd": 195971.0,
+     "busy_destroyed_gpu_hours": 59.0,
+     "busy_destroyed_usd": 148.0,
+     "completed_jobs_hit": 169,
+     "bursty_jobs_hit": 239,
+     "bursty_gpu_hours_hit": 9614.0
+    },
+    {
+     "g": 7,
+     "t": 1,
+     "guard": "peak0",
+     "jobs": 764,
+     "returns_gpu_hours": 53248.0,
+     "returns_usd": 133121.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 89,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 1,
+     "guard": "peak20",
+     "jobs": 931,
+     "returns_gpu_hours": 64040.0,
+     "returns_usd": 160099.0,
+     "busy_destroyed_gpu_hours": 34.0,
+     "busy_destroyed_usd": 85.0,
+     "completed_jobs_hit": 132,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 2,
+     "guard": "none",
+     "jobs": 1288,
+     "returns_gpu_hours": 79266.0,
+     "returns_usd": 198165.0,
+     "busy_destroyed_gpu_hours": 75.0,
+     "busy_destroyed_usd": 186.0,
+     "completed_jobs_hit": 183,
+     "bursty_jobs_hit": 243,
+     "bursty_gpu_hours_hit": 9812.0
+    },
+    {
+     "g": 7,
+     "t": 2,
+     "guard": "peak0",
+     "jobs": 764,
+     "returns_gpu_hours": 53248.0,
+     "returns_usd": 133121.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 89,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 2,
+     "guard": "peak20",
+     "jobs": 946,
+     "returns_gpu_hours": 64210.0,
+     "returns_usd": 160524.0,
+     "busy_destroyed_gpu_hours": 37.0,
+     "busy_destroyed_usd": 93.0,
+     "completed_jobs_hit": 143,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 3,
+     "guard": "none",
+     "jobs": 1346,
+     "returns_gpu_hours": 89061.0,
+     "returns_usd": 222652.0,
+     "busy_destroyed_gpu_hours": 378.0,
+     "busy_destroyed_usd": 946.0,
+     "completed_jobs_hit": 208,
+     "bursty_jobs_hit": 265,
+     "bursty_gpu_hours_hit": 18320.0
+    },
+    {
+     "g": 7,
+     "t": 3,
+     "guard": "peak0",
+     "jobs": 764,
+     "returns_gpu_hours": 53248.0,
+     "returns_usd": 133121.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 89,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 3,
+     "guard": "peak20",
+     "jobs": 952,
+     "returns_gpu_hours": 64327.0,
+     "returns_usd": 160817.0,
+     "busy_destroyed_gpu_hours": 41.0,
+     "busy_destroyed_usd": 103.0,
+     "completed_jobs_hit": 148,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 4,
+     "guard": "none",
+     "jobs": 1426,
+     "returns_gpu_hours": 98528.0,
+     "returns_usd": 246321.0,
+     "busy_destroyed_gpu_hours": 1101.0,
+     "busy_destroyed_usd": 2752.0,
+     "completed_jobs_hit": 243,
+     "bursty_jobs_hit": 265,
+     "bursty_gpu_hours_hit": 18320.0
+    },
+    {
+     "g": 7,
+     "t": 4,
+     "guard": "peak0",
+     "jobs": 764,
+     "returns_gpu_hours": 53248.0,
+     "returns_usd": 133121.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 89,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 4,
+     "guard": "peak20",
+     "jobs": 956,
+     "returns_gpu_hours": 64716.0,
+     "returns_usd": 161790.0,
+     "busy_destroyed_gpu_hours": 69.0,
+     "busy_destroyed_usd": 173.0,
+     "completed_jobs_hit": 150,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 5,
+     "guard": "none",
+     "jobs": 1741,
+     "returns_gpu_hours": 117682.0,
+     "returns_usd": 294206.0,
+     "busy_destroyed_gpu_hours": 4182.0,
+     "busy_destroyed_usd": 10455.0,
+     "completed_jobs_hit": 400,
+     "bursty_jobs_hit": 265,
+     "bursty_gpu_hours_hit": 18320.0
+    },
+    {
+     "g": 7,
+     "t": 5,
+     "guard": "peak0",
+     "jobs": 764,
+     "returns_gpu_hours": 53248.0,
+     "returns_usd": 133121.0,
+     "busy_destroyed_gpu_hours": 0.0,
+     "busy_destroyed_usd": 0.0,
+     "completed_jobs_hit": 89,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    },
+    {
+     "g": 7,
+     "t": 5,
+     "guard": "peak20",
+     "jobs": 958,
+     "returns_gpu_hours": 64780.0,
+     "returns_usd": 161950.0,
+     "busy_destroyed_gpu_hours": 78.0,
+     "busy_destroyed_usd": 194.0,
+     "completed_jobs_hit": 150,
+     "bursty_jobs_hit": 0,
+     "bursty_gpu_hours_hit": 0.0
+    }
+   ],
+   "default": {
+    "g": 2,
+    "t": 0,
+    "guard": "peak0"
+   },
+   "note": "A job at 0% average and 0% peak never ran a kernel, so a peak-guarded rule has no false positives inside this data. Everything above zero trades savings for damage."
+  },
+  "definitions": [
+   {
+    "id": "cancelled",
+    "question": "Is a job its owner cancelled a waste of money?",
+    "options": [
+     {
+      "label": "Yes, every cancelled hour",
+      "gpu_hours": 203930.0,
+      "usd": 509824.0,
+      "verdict": "overstates"
+     },
+     {
+      "label": "Only the hours the card sat idle",
+      "gpu_hours": 133974.0,
+      "usd": 334935.0,
+      "verdict": "defensible"
+     }
+    ],
+    "cost_gpu_hours": 69956.0,
+    "cost_usd": 174889.0,
+    "why": "Cancelled jobs ran at 34.3% hour-weighted utilization against the cluster's 38.5%. Cancelling is usually a researcher correctly killing a run that looked wrong \u2014 good practice, not waste. The idle time before the cancel is already counted in the buckets."
+   },
+   {
+    "id": "headline",
+    "question": "How much of the bill is recoverable?",
+    "options": [
+     {
+      "label": "Everything that did not become finished work",
+      "gpu_hours": 493215.0,
+      "usd": 1233038.0,
+      "verdict": "true but not recoverable"
+     },
+     {
+      "label": "What a defensible policy frees",
+      "gpu_hours": 143763.0,
+      "usd": 359407.0,
+      "verdict": "defensible"
+     }
+    ],
+    "cost_gpu_hours": 349452.0,
+    "cost_usd": 873631.0,
+    "why": "The first number is the brief's starting point and it is real. Promising it as a cut commits to recovering hours spent on work that finished, crashed for reasons a scheduler cannot fix, or was computing when it stopped."
+   },
+   {
+    "id": "weighting",
+    "question": "What is the cluster's average utilization?",
+    "options": [
+     {
+      "label": "Averaged across jobs",
+      "pct": 25.2,
+      "verdict": "not about money"
+     },
+     {
+      "label": "Weighted by GPU-hours",
+      "pct": 38.5,
+      "verdict": "defensible"
+     }
+    ],
+    "cost_gpu_hours": null,
+    "cost_usd": null,
+    "why": "A third of the job records hold almost none of the compute, so counting jobs equally answers a different question from the one the CFO asked."
+   }
+  ],
+  "nodes": {
+   "exposure": {
+    "min_jobs": 4,
+    "max_jobs": 1114,
+    "nodes": 225,
+    "exposure_floor": 50
+   },
+   "cluster_failure_rate": 0.2483,
+   "by_count": [
+    {
+     "node": "r5179276-n772143",
+     "jobs": 688,
+     "failures": 366,
+     "failure_rate": 0.532,
+     "gpu_hours_served": 2675.0,
+     "users": 62,
+     "top_owner_share_of_failures": 0.609,
+     "one_owner_dominates": true
+    },
+    {
+     "node": "r7317916-n172107",
+     "jobs": 654,
+     "failures": 325,
+     "failure_rate": 0.4969,
+     "gpu_hours_served": 2446.0,
+     "users": 64,
+     "top_owner_share_of_failures": 0.169,
+     "one_owner_dominates": false
+    },
+    {
+     "node": "r2215649-n410412",
+     "jobs": 546,
+     "failures": 288,
+     "failure_rate": 0.5275,
+     "gpu_hours_served": 3159.0,
+     "users": 46,
+     "top_owner_share_of_failures": 0.736,
+     "one_owner_dominates": true
+    },
+    {
+     "node": "r4605940-n772143",
+     "jobs": 672,
+     "failures": 286,
+     "failure_rate": 0.4256,
+     "gpu_hours_served": 2468.0,
+     "users": 59,
+     "top_owner_share_of_failures": 0.381,
+     "one_owner_dominates": false
+    },
+    {
+     "node": "r216287-n200569",
+     "jobs": 465,
+     "failures": 267,
+     "failure_rate": 0.5742,
+     "gpu_hours_served": 1994.0,
+     "users": 51,
+     "top_owner_share_of_failures": 0.33,
+     "one_owner_dominates": false
+    },
+    {
+     "node": "r7753495-n717709",
+     "jobs": 374,
+     "failures": 245,
+     "failure_rate": 0.6551,
+     "gpu_hours_served": 2059.0,
+     "users": 28,
+     "top_owner_share_of_failures": 0.804,
+     "one_owner_dominates": true
+    },
+    {
+     "node": "r4683026-n303509",
+     "jobs": 512,
+     "failures": 240,
+     "failure_rate": 0.4688,
+     "gpu_hours_served": 2434.0,
+     "users": 55,
+     "top_owner_share_of_failures": 0.717,
+     "one_owner_dominates": true
+    },
+    {
+     "node": "r8141575-n469339",
+     "jobs": 745,
+     "failures": 227,
+     "failure_rate": 0.3047,
+     "gpu_hours_served": 2752.0,
+     "users": 60,
+     "top_owner_share_of_failures": 0.467,
+     "one_owner_dominates": false
+    },
+    {
+     "node": "r810901-n172107",
+     "jobs": 714,
+     "failures": 224,
+     "failure_rate": 0.3137,
+     "gpu_hours_served": 3292.0,
+     "users": 66,
+     "top_owner_share_of_failures": 0.241,
+     "one_owner_dominates": false
+    },
+    {
+     "node": "r7317916-n772143",
+     "jobs": 593,
+     "failures": 217,
+     "failure_rate": 0.3659,
+     "gpu_hours_served": 2277.0,
+     "users": 55,
+     "top_owner_share_of_failures": 0.249,
+     "one_owner_dominates": false
+    }
+   ],
+   "by_rate": [
+    {
+     "node": "r7753495-n717709",
+     "jobs": 374,
+     "failures": 245,
+     "failure_rate": 0.6551,
+     "gpu_hours_served": 2059.0,
+     "users": 28,
+     "top_owner_share_of_failures": 0.804,
+     "one_owner_dominates": true
+    },
+    {
+     "node": "r216287-n200569",
+     "jobs": 465,
+     "failures": 267,
+     "failure_rate": 0.5742,
+     "gpu_hours_served": 1994.0,
+     "users": 51,
+     "top_owner_share_of_failures": 0.33,
+     "one_owner_dominates": false
+    },
+    {
+     "node": "r5179276-n772143",
+     "jobs": 688,
+     "failures": 366,
+     "failure_rate": 0.532,
+     "gpu_hours_served": 2675.0,
+     "users": 62,
+     "top_owner_share_of_failures": 0.609,
+     "one_owner_dominates": true
+    },
+    {
+     "node": "r2215649-n410412",
+     "jobs": 546,
+     "failures": 288,
+     "failure_rate": 0.5275,
+     "gpu_hours_served": 3159.0,
+     "users": 46,
+     "top_owner_share_of_failures": 0.736,
+     "one_owner_dominates": true
+    },
+    {
+     "node": "r5051220-n200569",
+     "jobs": 366,
+     "failures": 184,
+     "failure_rate": 0.5027,
+     "gpu_hours_served": 1783.0,
+     "users": 54,
+     "top_owner_share_of_failures": 0.609,
+     "one_owner_dominates": true
+    },
+    {
+     "node": "r7317916-n172107",
+     "jobs": 654,
+     "failures": 325,
+     "failure_rate": 0.4969,
+     "gpu_hours_served": 2446.0,
+     "users": 64,
+     "top_owner_share_of_failures": 0.169,
+     "one_owner_dominates": false
+    },
+    {
+     "node": "r4683026-n303509",
+     "jobs": 512,
+     "failures": 240,
+     "failure_rate": 0.4688,
+     "gpu_hours_served": 2434.0,
+     "users": 55,
+     "top_owner_share_of_failures": 0.717,
+     "one_owner_dominates": true
+    },
+    {
+     "node": "r7317916-n303509",
+     "jobs": 424,
+     "failures": 196,
+     "failure_rate": 0.4623,
+     "gpu_hours_served": 3492.0,
+     "users": 52,
+     "top_owner_share_of_failures": 0.49,
+     "one_owner_dominates": false
+    },
+    {
+     "node": "r4144777-n172107",
+     "jobs": 437,
+     "failures": 202,
+     "failure_rate": 0.4622,
+     "gpu_hours_served": 3623.0,
+     "users": 51,
+     "top_owner_share_of_failures": 0.45,
+     "one_owner_dominates": false
+    },
+    {
+     "node": "r4605940-n772143",
+     "jobs": 672,
+     "failures": 286,
+     "failure_rate": 0.4256,
+     "gpu_hours_served": 2468.0,
+     "users": 59,
+     "top_owner_share_of_failures": 0.381,
+     "one_owner_dominates": false
+    }
+   ],
+   "ranking_overlap": 7,
+   "drain_cost": {
+    "nodes": 5,
+    "gpu_hours": 21840,
+    "usd": 54600.0,
+    "weeks": 13
+   },
+   "why": "Ranking machines by failure count and by failure rate gives two different lists, because exposure runs from 4 to 1,114 jobs per machine. Before draining anything, check whether one researcher owns most of its failures."
+  },
+  "limits": [
+   {
+    "limit": "No inside-the-job timeline",
+    "consequence": "Utilization is one average and one peak per job. 'Idle the whole time' and 'idle on average' are indistinguishable unless the peak is also zero."
+   },
+   {
+    "limit": "Utilization is a proxy for useful work",
+    "consequence": "A job bound on its data loader or on talking to other machines does real work at low occupancy. Low is a question, not a verdict."
+   },
+   {
+    "limit": "Idle capacity is invisible where you would look for it",
+    "consequence": "Telemetry starts and stops with a job, so an unallocated GPU emits nothing. None of these figures describe time nobody booked."
+   },
+   {
+    "limit": "This is a sample, not the whole cluster",
+    "consequence": "MIT publishes four months of jobs and says it is not appropriate for estimating system utilization. Every number describes this sample over this window."
+   }
+  ],
+  "reading": "Same six buckets again. The column now shows what we are assuming, and what it costs to be wrong about it \u2014 which is why the cautious total in the previous section is the honest one to promise."
+ }
+}
