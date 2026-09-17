@@ -5,7 +5,7 @@ straight from analysis/node_triage.json (case 6).
 """
 import json
 
-TEAM = "REPLACE ME before submitting"
+TEAM = "Team 16"
 triage = json.load(open("analysis/node_triage.json"))
 
 claims = {
