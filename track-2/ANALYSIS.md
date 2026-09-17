@@ -20,8 +20,8 @@ prepped data (`python3 analysis/<script>.py`).
 | 3 | Card imbalance | done |
 | 4 | The shared-storage incident | done |
 | 5 | Hardware-attributable failures | done |
-| 6 | Node triage (113 elevated-failure-rate findings) | next |
-| 7 | The API's "drain the top 5 nodes" recommendation | |
+| 6 | Node triage (113 elevated-failure-rate findings) | done |
+| 7 | The API's "drain the top 5 nodes" recommendation | next |
 | 8 | The queue tail, priced in engineer-hours | |
 
 ---
@@ -726,3 +726,138 @@ recovers by more than 100×.
 
 > Hardware caused under 1% of failures. One machine broke silently and failed 140 of
 > 144 jobs over a week; a $700 drain would have caught it six days sooner.
+
+---
+
+## Case 6 — Node triage
+
+Script: `analysis/case6_triage.py`. Outputs: `analysis/node_triage.json` (the
+`claims.json` entries) and `analysis/out_case6_triage.json` (every number).
+
+**Question.** `rules::node-elevated-failure-rate` fired 113 times on 87 machines.
+Why did each one fire: `hardware`, `user_code`, `workload_mix`, or
+`cannot_determine`?
+
+### Reproducing the rule first
+
+Before judging a finding we rebuilt the counts it was computed from. The rule
+evaluates **consecutive 14-day windows anchored at the first job** (2026-02-25 about
+22:00 UTC). It counts jobs by **`time_end`**, attributes them to a machine through
+**`gpus.parquet`'s `Node`** (not `primary_node`), and counts `state_name == FAILED`
+as a failure.
+
+With that definition, **112 of 113 findings reproduce exactly** (`metadata.jobs`
+and `metadata.failed`). The exception, `r8473362-n410412` in window 4, is short
+by one job that didn't fail (115 against 116), most likely a requeued job whose card
+rows sit on another attempt's machine.
+
+**Window index** = `(time_end − first job start) // 14 days`. It runs from 0
+(2026-02-25) to 8 (2026-06-17), matching each finding's `window_start`.
+
+### The tests, compared like with like
+
+For each (node, window), using only jobs that finished in that window:
+
+1. **Machine signature (hardware).** An exit status (`exit_code // 256`) that
+   **two or more owners** hit on this machine at least twice, and on **no other
+   machine in four months**, or two or more node failures located here
+   (`nodefail_nodes`, `nodefail_exact`).
+2. **One person (user_code).** All of the following must hold:
+   - the top owner holds **≥ 60%** of the failures,
+   - **everyone else** on the machine fails at a rate not above the cluster's
+     (one-sided binomial, p ≥ 0.05),
+   - the owner's failures follow them, either on **other machines in the same
+     window** (at least half their rate here, with ≥ 5 jobs there) or in **the same
+     arrays' tasks on other machines** (sibling failure rate at least half their
+     rate here, with ≥ 5 siblings).
+
+   Arrays are the cleanest comparison: identical scripts on different machines.
+3. **The work it received (workload_mix).** No owner dominates. The expected count
+   is Σ over owners of (their jobs here × their own FAILED rate on other machines in
+   the same window). If observed failures aren't significantly above that (Poisson,
+   p ≥ 0.05, with at least 60% of jobs having a baseline), the machine simply
+   received failure-prone work.
+4. **Everything else is cannot_determine,** with the specific reason: no baseline
+   for the dominant owner, others on the machine also elevated, or excess failures
+   spread over several owners without a signature.
+
+We avoided two traps from `docs/rules.md`:
+
+- "Whoever owns most failures" isn't a test on its own, so we always check the rest
+  of the machine.
+- "Does this person fail elsewhere" isn't a test unless the work is comparable,
+  which is why we use array siblings and the same window.
+
+### Results
+
+| Cause | Findings | Failed jobs | Verdict |
+|---|---|---|---|
+| `user_code` | **46** | 2,913 | `no_action` on the machine (talk to the owner) |
+| `workload_mix` | **40** | 841 | `no_action` |
+| `cannot_determine` | **26** (23%) | 1,366 | `monitor` |
+| `hardware` | **1** | 188 | `act` |
+
+**The one hardware verdict** is `r216287-n200569` in window 0, case 5's silent
+SIGBUS machine: status 135 × 3 owners. **The same machine in window 3 comes out
+`user_code`**: 20 of 33 failures from one owner whose array siblings elsewhere failed
+180 of 180. After the SIGBUS episode, the machine's failures were ordinary user
+failures.
+
+**Examples of reasoning** (every entry names its columns and numbers):
+
+- *user_code:* `r3974592-n172107` in window 0 had 106 of 139 jobs fail, against a
+  cluster rate of 0.291. `u-11631751931` holds 94% of the failures (100 of 116 here)
+  and failed 943 of 3,451 on other machines. Their array siblings elsewhere failed
+  215 of 227, and everyone else on the machine failed 6 of 23 (p = 0.70, not
+  elevated).
+- *workload_mix:* `r3974592-n303509` in window 0 had 47 of 112 jobs fail. Six owners
+  were failing, and the top one held 53%. From each owner's own rate elsewhere,
+  42.8 failures were expected against 47 observed (p = 0.28).
+- *cannot_determine:* `r810901-n772143` in window 8 had 70 of 89 jobs fail. One
+  owner holds 80%, but the others on the machine also failed 14 of 17, so the
+  machine isn't cleared. There was no signature and no node failure.
+
+### The ones worth a second look
+
+Three `cannot_determine` findings lean toward the machine:
+
+| Node, window | Failed | Why it leans toward the machine |
+|---|---|---|
+| `r7317916-n172107`, w7 | 193/234 | 4 owners fail here at 2× or more their own rate. The top owner went 55/55 here against 6/177 elsewhere in the same window, **and their array siblings elsewhere succeeded 11/11**. Two bursts, on June 7 (89/93) and June 9 (68/75). All exit status 1, so there is no signature. |
+| `r4683026-n303509`, w6 | 158/216 | One owner: 158/210 here against 332/1,645 elsewhere. The machine was almost theirs alone (others 0/6). |
+| `r2215649-n410412`, w6 | 209/244 | One owner: 198/204 here against 292/1,651 elsewhere. Others 11/40. |
+
+Each could be the machine, or particular work that was only ever sent there. The
+data can't separate the two, which is exactly the burst detector's `undetermined`
+reasoning. **The first one is the best candidate for a second silent fault.** Its
+verdict stays `monitor`, but it is the first machine we'd inspect.
+
+### Cross-check against the burst detector
+
+Some flagged windows contain a `node-job-failure-burst`, whose 48-hour causal
+attribution is independent of ours:
+
+| Our cause \ burst attribution | hardware | user | undetermined |
+|---|---|---|---|
+| hardware | 1 | 0 | 0 |
+| user_code | 0 | 12 | 10 |
+| workload_mix | 0 | 1 | 2 |
+| cannot_determine | 0 | 0 | 4 |
+
+- **Where the burst detector named a cause, we agree in 13 of 14.** The exception
+  (`r5179276-n772143` in window 8) is a burst one user dominated for 48 hours, inside
+  a 14-day window where that user holds only 37% of the failures.
+- **We go further in 10 of the burst detector's `undetermined` cases,** because our
+  14-day window finds array siblings failing on other machines, which its 48-hour
+  window doesn't see.
+
+### Cost of being wrong
+
+- **Calling user code hardware** drains a healthy machine (48 GPU-h a day) and
+  leaves the owner's bug in place. That is why `hardware` requires a multi-owner
+  signature: it fired once.
+- **Calling hardware user code** leaves a broken machine in service. The mitigation
+  is `monitor` on every `cannot_determine`, with the three above first in line.
+- **Most of these 113 findings need no machine action at all.** 86 are about people
+  or workload. That makes the finding count a poor drain signal, which leads into
+  case 7.
