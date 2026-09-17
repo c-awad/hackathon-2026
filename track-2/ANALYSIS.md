@@ -19,8 +19,8 @@ prepped data (`python3 analysis/<script>.py`).
 | 2b | Which GPU jobs could run on CPU instead | done |
 | 3 | Card imbalance | done |
 | 4 | The shared-storage incident | done |
-| 5 | Hardware-attributable failures | next |
-| 6 | Node triage (113 elevated-failure-rate findings) | |
+| 5 | Hardware-attributable failures | done |
+| 6 | Node triage (113 elevated-failure-rate findings) | next |
 | 7 | The API's "drain the top 5 nodes" recommendation | |
 | 8 | The queue tail, priced in engineer-hours | |
 
@@ -602,3 +602,127 @@ the asymmetry favors the single-resource answer.
 > A storage slowdown looked like 121 broken machines. It was one volume. Fix the
 > volume; draining the machines would have taken half the cluster offline for two
 > days and fixed nothing.
+
+---
+
+## Case 5 — Hardware-attributable failures
+
+Script: `analysis/case5_hardware.py`
+
+**Question.** How many failed jobs were genuinely caused by faulty hardware, and
+which machines were responsible?
+
+**Exit status** is `exit_code // 256`. Among FAILED jobs the common statuses are 1
+(14,218), 2 (1,529), 137 SIGKILL (1,228), 134 SIGABRT (453), 130 (411), 127 (382),
+135 SIGBUS (129) and 139 SIGSEGV (95). A single exit code can't say whether the code
+or the machine was at fault. A *pattern* can.
+
+### Source 1: what the scheduler recorded
+
+| | |
+|---|---|
+| Jobs that hit a node failure on any attempt | **31** |
+| Failed attempts | 39 |
+| Jobs whose *final* state is NODE_FAIL | 10 |
+| Final states of the 31 | NODE_FAIL 10, CANCELLED 7, COMPLETED 6, FAILED 5, TIMEOUT 3 |
+| Failures located to one machine | 25 |
+| GPU-h lost in failed attempts | **7,772** |
+
+**Filtering on `state_name == NODE_FAIL` finds 10 of the 31.** The other 21 were
+requeued and ended some other way, 6 of them successfully.
+
+**The job's machine is usually not the one that died.** Of the 25 located failures,
+19 happened on a different machine from the job's `primary_node`. The docs count 18
+against the final attempt's machine; the small difference comes from `primary_node`
+being the first node in the list. Two machines died twice: `r4683026-n772143` and
+`r810901-n948219`.
+
+Six failures spanned 4 to 16 machines, and the scheduler doesn't record which one
+died. We don't blame any of them.
+
+### Source 2: a machine that broke silently
+
+**The test.** For every (machine, exit status) pair, count the owners who crashed
+there with that status at least 3 times and **never** produced it on any other
+machine. One owner fitting that test is a habit of their code on that machine. Two
+or more unrelated owners point at the machine.
+
+**Across all 225 machines, exactly one pair passes:**
+
+| Machine | Status | Owners | Crashes |
+|---|---|---|---|
+| **`r216287-n200569`** | **135 (SIGBUS, bus error)** | **3** | **114** |
+
+Five other pairs have a single owner, which reads as user code.
+
+This independently reproduces `rules::node-hardware-fault`. Over its window
+(2026-02-27 to 03-07):
+
+- **The machine ran 144 jobs and 140 of them failed.**
+- **Three owners' SIGBUS crashes:** 86 + 23 + 5, against 0 SIGBUS crashes in their
+  946, 1,427 and 1,544 jobs on other machines.
+- **The other 26 failures** (statuses 1, 2, 130, 137) came from 8 owners whose usual
+  failure rate elsewhere is 16% to 69%. They look like ordinary user failures, not
+  the machine.
+- **The SIGBUS crashes came in two bursts**, 85 on March 1 and 29 on March 5. There
+  was no SIGBUS on this machine before or after. The machine kept failing jobs later
+  (for example 43 of 51 on March 10), but with other statuses and without the
+  multi-owner signature.
+
+### Why the obvious methods miss it
+
+- **The scheduler never marked it down.** It has zero NODE_FAIL records, so it
+  kept receiving work.
+- **Ranking by raw failures puts it 5th.** The four machines above it (366, 325,
+  288 and 286 failures) are high-volume machines where users' own failures pile up.
+- **The rate rule does flag it, with no cause.** By failure *rate* it is 2nd, and
+  `node-elevated-failure-rate` fired on it (p = 2e-54 for 2026-02-25). But that rule
+  fires on 87 machines and deliberately says nothing about why.
+- **Single exit codes can't separate code from machine.** 129 SIGBUS failures
+  cluster-wide look like user bugs one at a time.
+
+### How early it could have been caught
+
+The first SIGBUS came on 03-01 at 12:08, and a **second, unrelated owner** crashed
+the same way on 03-01 at 19:16. From that moment the multi-owner test had its
+evidence. After that point, **36 more jobs** crashed with SIGBUS before the finding
+was raised on 03-07.
+
+**Draining the machine at the second owner's crash** would have removed about 5.9
+days of one 2-GPU node: **281 GPU-h, about $700 of capacity**. That is cheap next to
+36 crashed jobs and the researcher time behind them. A two-owner signature rule is
+worth running on every machine.
+
+### The count
+
+| | Failed jobs | GPU-h lost |
+|---|---|---|
+| Scheduler-recorded (any attempt killed by a node failure) | 31 | 7,772 |
+| Silent machine, SIGBUS signature | 114 | 76.6 (whole window, 140 failures) |
+| **Point** | **145** | **about 7,850 ($19.6K)** |
+
+- **Low: 124.** The 114 SIGBUS crashes plus the 10 jobs whose final state is
+  NODE_FAIL, counting only failures that nothing recovered from.
+- **High: 171.** All 140 failures on the silent machine in its window, plus the 31
+  scheduler-recorded jobs. This assumes the broken machine also caused some of the
+  non-SIGBUS failures, which the owners' base rates argue against.
+
+**`hardware_attributable_failures = 145`**, with confidence 0.6. That is **0.8% of
+the 18,587 FAILED jobs**. Almost all failures on this cluster are user code, and
+counting every failure as infrastructure would overstate what fixing hardware
+recovers by more than 100×.
+
+### Cost of being wrong
+
+- **Too many false alarms would drain healthy machines.** Draining a 2-GPU machine
+  costs 48 GPU-h a day ($120). The two-owner signature fired exactly once in four
+  months, so false-alarm drains would be rare and cheap.
+- **Missing a real fault costs far more.** This one sat in service for six days and
+  crashed 36 more jobs after the evidence was in.
+- **Blaming the machine a job finished on is the other mistake.** It picks the wrong
+  machine for 19 of 25 scheduler-recorded failures. Use `nodefail_nodes`.
+
+### Candidate CFO line
+
+> Hardware caused under 1% of failures. One machine broke silently and failed 140 of
+> 144 jobs over a week; a $700 drain would have caught it six days sooner.
