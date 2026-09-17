@@ -21,8 +21,8 @@ prepped data (`python3 analysis/<script>.py`).
 | 4 | The shared-storage incident | done |
 | 5 | Hardware-attributable failures | done |
 | 6 | Node triage (113 elevated-failure-rate findings) | done |
-| 7 | The API's "drain the top 5 nodes" recommendation | next |
-| 8 | The queue tail, priced in engineer-hours | |
+| 7 | The API's "drain the top 5 nodes" recommendation | done |
+| 8 | The queue tail, priced in engineer-hours | next |
 
 ---
 
@@ -861,3 +861,93 @@ attribution is independent of ours:
 - **Most of these 113 findings need no machine action at all.** 86 are about people
   or workload. That makes the finding count a poor drain signal, which leads into
   case 7.
+
+---
+
+## Case 7 — Auditing the API's recommendations
+
+Script: `analysis/case7_drain_rec.py`
+
+**Question.** `GET /v1/recommendations` offers *"Drain the top 5 underperforming
+nodes… These nodes carry the highest finding counts in the fleet. Drain and submit
+for hardware inspection."* It estimates **$57,226 (22,890 GPU-h)** saved, with
+effort `low` and confidence 0.58. Should the CFO act on it?
+
+**No.** It is the most expensive mistake on offer: none of the five machines shows
+any evidence of a hardware fault.
+
+### How the endpoint builds it (`api/main.py`, `api/data_loader.py`)
+
+1. **Rank machines by the number of findings whose `resourceIds` include them.**
+   `rootCauses` is never read.
+2. **Take the top 5.** Three machines tie at 146 findings for 5th place
+   (`r7317916-n303509`, `r5051220-n200569`, `r810901-n172107`), and the endpoint's
+   dict order picks `r7317916-n303509`. **One of the five machines to drain is chosen
+   by a tie-break.**
+3. **"Savings" = the sum of their job-scope `impact_gpu_hours`**, which mixes `lost`,
+   `consumed` and `unused_capacity` (docs: *don't add across kinds*). We reproduce
+   22,890.
+
+### What the five machines actually are
+
+| Node | Findings | `array-task-failure` | Case 6 verdicts |
+|---|---|---|---|
+| `r4605940-n772143` | 259 | 209 | user_code (w4, w8) |
+| `r7317916-n772143` | 165 | 134 | user_code (w4, w8) |
+| `r3974592-n172107` | 164 | 122 | user_code (w0) |
+| `r4144777-n172107` | 154 | 104 | user_code (w4); cannot_determine (w3, w7) |
+| `r7317916-n303509` | 146 | 95 | user_code (w0); workload_mix (w1) |
+
+- **Their finding counts come from arrays.** 664 of the findings on these machines
+  (76% of all their findings carry a root cause elsewhere) resolve through
+  `rootCauses` to a **Slurm array** (`k8s:job`). `POST /v1/causal` says those
+  failures belong to the array, spread across many machines. The machines are
+  crowded with symptoms of other people's broken scripts.
+- **No hardware evidence.** None of the five has the multi-owner exit-status
+  signature (case 5), and none has a node failure located on it (`nodefail_nodes`).
+  Of their 10 flagged windows, 7 are `user_code`, 1 is `workload_mix` and 2 are
+  `cannot_determine`. None is `hardware`.
+- **The failures follow the people.** 1,078 FAILED jobs from 63 owners ran on these
+  machines. Those owners fail 24.5% of the time on every other machine, against
+  37.6% here, which is roughly what heavy array users produce wherever they land.
+- **The machine that *was* broken ranks 21st.** `r216287-n200569`, the silent
+  SIGBUS machine from case 5, has fewer findings than any of the five. A
+  finding-count ranking doesn't find hardware faults.
+
+### What following it would cost
+
+- **Draining five 2-GPU machines** removes **1,680 GPU-h a week ($4,200)**, or
+  21,840 GPU-h ($54,600) over a 13-week quarter.
+- **Those machines were doing real work.** They delivered 15,300 card-hours over the
+  window (51% of their capacity), 4,829 of them on jobs that completed.
+- **The "savings" wouldn't happen.** The failing arrays would be rescheduled onto
+  other machines and fail there, because the cause is in the scripts. At best,
+  draining saves nothing. At worst, it removes capacity during a quarter when the
+  CFO is trying to cut 20% "without slowing research down".
+- **The right action for the same findings** is one conversation per failing
+  array (case 2 and `rules::array-mass-failure`), plus the signature rule from
+  case 5 for real hardware faults.
+
+**The rival recommendation is also shaky.** `rec_lowutil` ("fractional-GPU queue",
+$53,430) takes 35% of `gpu-low-utilization`'s 61,063 GPU-h. The 0.35 is a constant
+in the code, not something the data supports. It cites only 20 of the 95 findings,
+and 24 of those 95 jobs use 16 or more GPUs, which a fractional-GPU queue doesn't
+serve.
+
+### Argue with us: what Layer B should do instead
+
+- **Group findings by `rootCauses` before ranking anything.** 121 volume findings
+  and 5,044 array-task findings are two problems, not 5,165.
+- **Rank machines on evidence that follows the machine** (a multi-owner signature,
+  located node failures, excess failures after adjusting for each owner's own
+  rate), not on how many findings touch them.
+- **Break ties explicitly, or return all tied machines.** A drain list shouldn't
+  depend on dict order.
+- **Don't sum `impact_gpu_hours` across `impact_kind`,** and don't call the result a
+  saving. Draining a machine recovers no GPU-hours; it removes them.
+
+### Candidate CFO line
+
+> The API's top suggestion, "drain five machines, save $57K", would cost $55K of
+> capacity a quarter and save nothing: those machines are healthy, and the failures
+> belong to a handful of broken scripts that would fail anywhere.
