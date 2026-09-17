@@ -372,33 +372,61 @@ omission.
 | **`hop_count` > 1 on neighbor** | Used once, in the review, and that is where the truncation bug showed up |
 | **`entity_type=user` on underperforming** | Called, but deliberately not shown: it ranks people, and the brief warns a dashboard ranking employees by waste is a hostile dashboard |
 
-## The `mcp_layer/` MCP server — not used at all
+## The `mcp_layer/` MCP server — driven, with a transcript
 
-`mcp_layer/server.py` exposes the same API as **13 hand-written tools** for an LLM
-agent (`health`, `list_findings`, `causal`, `neighbor`, `detect`, `list_rules`,
+`mcp_layer/server.py` exposes the API as **13 hand-written tools** for an LLM agent
+(`health`, `list_findings`, `causal`, `neighbor`, `detect`, `list_rules`,
 `price_book`, `efficiency_summary`, `waste_breakdown`, `queue_latency`,
 `scaling_efficiency`, `underperforming`, `recommendations`), with docstrings that
-teach an agent the `fact` / `judgment` distinction and when to validate a judgment
-against `causal`.
+teach the `fact` / `judgment` distinction and when to validate a judgment against
+`causal`.
 
-**We have not run it, and nothing we built uses it.** Everything above is plain
-HTTP from Python. This is the clearest gap in our submission against the stated
-judging focus, which names *"use of the MantisGrid AI API **and its MCP tools**"*.
+```bash
+make mcp-demo      # analysis/mcp_demo.py over stdio -> analysis/out_mcp_transcript.md
+make mcp           # the server itself, for an agent client such as Claude Desktop
+```
 
-Two honest options, in the time available:
+`analysis/mcp_demo.py` connects over stdio and asks the CFO's question the way an
+agent would, following the workflow the tool descriptions ask for: **never act on a
+`judgment` without passing it through `causal` first.** The full transcript is
+[`analysis/out_mcp_transcript.md`](analysis/out_mcp_transcript.md). What it found:
 
-1. **Run it and show it.** `make mcp` needs `uv` (not currently installed here), and
-   an agent client pointed at `track-2/`. The demo that would earn the credit is an
-   agent asked "where should we cut GPU spend, and what should we not do?", watched
-   as it calls `recommendations`, then `causal`, and changes its answer.
-2. **Say we didn't.** The analysis stands on its own, and an unused server is
-   better admitted than implied.
+**The drain recommendation's citations are not evidence.** `recommendations` cites
+20 findings for "drain the top 5 nodes" ($57,226, `kind: judgment`, confidence
+0.58). Passing all 20 to `causal`:
 
-What the MCP layer would add over our HTTP calls is not new data — it is the same
-endpoints — but it is the natural home for the one workflow we automated by hand:
-**never present a `judgment` without first passing it through `causal`.** That rule
-is what separates our tile 3 from the API's own recommendation, and it belongs in a
-tool description rather than in our heads.
+| Cited findings | `causal` result |
+|---|---|
+| **15 of 20** | `findings: []` — nothing upstream to resolve to |
+| 5 of 20 | resolve to something |
+
+The 15 are unrelated job-level findings that happen to sit on those machines —
+wall-clock kills, idle sessions, jobs that never computed. **A drain list cannot be
+built out of findings that have no cause.**
+
+**The findings on those machines that do carry a cause point elsewhere.** Asking
+`causal` about array-task failures on the same machines:
+
+| Finding | On machine | Resolves to | Top score | Machines score |
+|---|---|---|---|---|
+| `d3c2e41b` | `r7317916-n772143` | `array/31811330654` (`k8s:job`) | **1.0** | 0.15, 0.1, 0.1, 0.1 |
+| `89616802` | `r3974592-n172107` | `array/4316447703` (`k8s:job`) | **1.0** | 0.4, 0.3, 0.25, 0.05 |
+| `85d2ec4a` | `r3974592-n172107` | `array/34342561208` (`k8s:job`) | **1.0** | 0.167, 0.125, 0.083, 0.083 |
+
+The array scores 1.0 and each machine scores its thin share of that array's
+failures. **One broken submission script, not five broken machines.**
+
+**Two calls is the whole difference.** Ask for the recommendation, then ask `causal`
+what is underneath it. The recommendation endpoint never makes the second call, and
+the MCP tool descriptions are where that rule belongs — in the tooling, not in our
+heads. An agent that follows its own tool docs reaches our tile-3 conclusion
+unaided; one that takes `recommendations` at face value drains five healthy
+machines.
+
+The transcript also confirms, tool-side, the same things we found over HTTP: 24
+rules armed with `gpu-pcie-saturated` `CLEAR`, `efficiency_summary` re-pricing to
+`2026-Q3+custom` at $4.00/GPU-hour, and `queue_latency` returning $9,330,307
+labelled `kind: fact`.
 
 ---
 

@@ -1,4 +1,4 @@
-.PHONY: help prep generate check-data up down mcp validate
+.PHONY: help prep generate check-data up down mcp mcp-demo validate
 .DEFAULT_GOAL := help
 
 help:
@@ -19,6 +19,10 @@ up: ## API on :8000, notebooks on :8888
 
 down:
 	docker compose down
+
+mcp-demo: ## drive the MCP server as an agent would; writes analysis/out_mcp_transcript.md
+	uv run --python 3.12 --with-requirements requirements.lock.txt --with fastmcp \
+	  python analysis/mcp_demo.py
 
 mcp: ## run the MCP server for an agent client (needs uv + prep/generate)
 	uv run --with-requirements requirements.lock.txt --with fastmcp python -m mcp_layer.server
