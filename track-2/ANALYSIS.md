@@ -18,8 +18,8 @@ prepped data (`python3 analysis/<script>.py`).
 | 2 | Recoverable spend, and whether CANCELLED is waste | done |
 | 2b | Which GPU jobs could run on CPU instead | done |
 | 3 | Card imbalance | done |
-| 4 | The shared-storage incident | next |
-| 5 | Hardware-attributable failures | |
+| 4 | The shared-storage incident | done |
+| 5 | Hardware-attributable failures | next |
 | 6 | Node triage (113 elevated-failure-rate findings) | |
 | 7 | The API's "drain the top 5 nodes" recommendation | |
 | 8 | The queue tail, priced in engineer-hours | |
@@ -480,3 +480,125 @@ jobs.
 - **The stakes are small.** At $28K–$48K this is the smallest lever so far. It's
   worth a tile because it is **invisible in `jobs.parquet`**, which is the table most
   dashboards will read.
+
+---
+
+## Case 4 — The shared-storage incident
+
+Script: `analysis/case4_storage.py`
+
+**Question.** 121 nodes raised `filesystem-latency-degraded` at once. Is that 121
+problems or one? What should be done, how many nodes should be drained, and how
+many GPU-hours were affected?
+
+**This is the one synthetic scenario in the corpus.** The volume, its `MOUNTS`
+edges and all 121 findings carry `metadata.synthetic = true`. The jobs, placements
+and utilization underneath are real.
+
+### One cause, not 121
+
+- **All 121 findings share a single root cause:** `pvc/scratch-lustre-02`, a
+  400 TiB shared Lustre volume (`ReadWriteMany`).
+- **`POST /v1/causal` on any of them** names the volume (score 0.88), with the
+  nodes far behind at 0.31: *"pvc/scratch-lustre-02 degraded — filesystem p99
+  latency rose …x, affecting 121 nodes"*.
+- **The graph agrees.** Every one of the 121 nodes runs pods with a `MOUNTS` edge
+  to the volume.
+- **Timing:** detections span 30 minutes (2026-03-10 08:59–09:27 UTC). Per-node p99
+  latency rose 28.3× to 45.5×.
+
+### The episode window
+
+The findings don't say when the 48-hour episode was. We rebuilt each node's
+`impact_gpu_hours` from real placements in `gpus.parquet` under three candidate
+windows:
+
+| Window | Card-hours | Correlation with the finding's impact |
+|---|---|---|
+| detection → +48 h | 7,393 | 0.44 |
+| **−48 h → detection** | **8,656** | **1.000** (median difference 0.01 h) |
+| −24 h → +24 h | 8,531 | 0.69 |
+
+**The episode is the 48 hours before detection: 2026-03-08 09:00 to 2026-03-10
+09:00 UTC.** Each node's "degraded" hours are simply every card-hour that ran on it
+in that window.
+
+### Does the real telemetry show it?
+
+| Cohort | Jobs | Hour-weighted util | Failed | Timed out | Median W |
+|---|---|---|---|---|---|
+| **121 nodes, episode** | 2,643 | **31.4%** | 30.3% | 1.0% | 29.8 |
+| 121 nodes, the week before | 643 | 36.4% | 30.6% | 4.2% | 37.9 |
+| 121 nodes, the week after | 381 | 30.6% | 20.2% | 11.5% | 39.6 |
+| other nodes, episode | 1,414 | 44.9% | 27.2% | 2.2% | 41.8 |
+| 38 mounting nodes without a finding, episode | 632 | 36.2% | 27.5% | 1.3% | 42.7 |
+
+**The causal chain's second hop, `gpu_sm_utilization` "abrupt_drop −91.4%", isn't in
+the real data.** Utilization on the 121 nodes was 31.4% during the episode, against
+36.4% the week before and 30.6% the week after. That is a five-point dip, within
+normal week-to-week variation, and the failure rate didn't move (30.3% against
+30.6%). The nodes did run below the rest of the cluster in the same window (31.4%
+against 44.9%), and at lower power, so a milder slowdown is consistent with the
+data. A 91% collapse is not.
+
+This is what you'd expect from a synthetic incident laid over real jobs: the
+storage story is invented, and the jobs underneath carried on as they were. **The
+causal chain's utilization hop is asserted, not measured**: in `api/main.py` it is a
+constant (`change_pct=-91.4, z_score=-7.8`).
+
+### What the API gets wrong
+
+- **The quoted latency ratio depends on which finding you ask about.** `/v1/causal`
+  builds its sentence from the *requested* finding's own `fs_latency_p99_ratio`, so
+  the same incident is reported as anywhere from "rose 28.3x" to "rose 45.5x".
+  A volume-level answer should quote one volume-level number.
+- **The culprit list shows the first four nodes, always at 0.31.** That is a
+  display choice, not evidence about those four.
+- **"Affecting 121 nodes" understates the reach.** Pods mounting the volume were
+  active on **159 nodes** during the episode. **38 of them have no finding**, and
+  they carried 632 jobs and 2,350 card-hours. Either the detector missed them, or
+  they weren't affected, which would undercut "the volume did it". The data can't
+  tell which.
+
+### The answer
+
+| Field | Value |
+|---|---|
+| `incident_root_cause` | `pvc/scratch-lustre-02` |
+| `incident_action_scope` | `single_resource` |
+| `incident_nodes_to_drain` | **0** |
+| `incident_degraded_gpu_hours` | point **8,654**, low 7,400, high 11,000 |
+| `incident_confidence` | 0.85 |
+
+**Degraded hours.**
+
+- **The point** is the findings' own figure, which we reproduced exactly from real
+  placements.
+- **The low end** allows for the episode boundaries being uncertain: the
+  post-detection reading gives 7,393.
+- **The high end** adds the 38 mounting nodes without a finding (11,005 in total).
+
+At $2.50 per GPU-hour that is $21.6K, with a range of $18.5K to $27.5K. These hours
+ran *degraded*; they weren't lost. The real telemetry suggests the degradation was
+mild.
+
+### Cost of being wrong
+
+**Draining the 121 nodes is the expensive mistake.** It removes 11,616 GPU-h of
+capacity over 48 hours ($29K), **54% of the cluster**, and it fixes nothing: every
+drained node would come back to the same slow volume.
+
+The right action is one ticket to the storage team for one volume. In the
+meantime, route latency-sensitive jobs away from `scratch-lustre-02`, not away from
+the machines.
+
+If the volume *isn't* the cause, the cost of acting on it is small: one storage
+investigation. The evidence against the volume is also strong: one shared
+dependency, every flagged node mounting it, and detections within 30 minutes. So
+the asymmetry favors the single-resource answer.
+
+### Candidate CFO line
+
+> A storage slowdown looked like 121 broken machines. It was one volume. Fix the
+> volume; draining the machines would have taken half the cluster offline for two
+> days and fixed nothing.
