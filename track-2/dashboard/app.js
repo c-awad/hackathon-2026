@@ -21,6 +21,9 @@ const usd = (n) => n == null ? "--" : (Math.abs(n) >= 1e6 ? "$" + (n / 1e6).toFi
 const usdFull = (n) => "$" + Math.round(n).toLocaleString("en-US");
 const num = (n) => Math.round(n).toLocaleString("en-US");
 const pct = (x) => (x * 100).toFixed(x < 0.1 ? 1 : 0) + "%";
+/* hours keep two decimals below 100 -- a p90 of 2.03 h must not read as "2 h" */
+const fmtv = (v, unit) => unit === "jobs" ? num(v)
+  : (Math.abs(v) < 100 ? v.toFixed(2) : num(v)) + " " + unit;
 
 /* ---------------------------------------------------------------- tooltip */
 const tip = $("#tip");
@@ -99,17 +102,76 @@ const tableWrap = (rows, cols, caption) => {
   return box;
 };
 
-/* ============================================================== render */
-fetch("data.json").then((r) => r.json()).then(render).catch((e) => {
+/* ------------------------------------------------- price: one rate, one scale */
+/* Every GPU figure in data.json is priced at the price book's rate. Changing the
+   rate rescales those (and only those -- blocks tagged priced_in:"engineer" are
+   salary, not GPU time), and we ask the API to re-price its own waterfall at the
+   same rate so the page shows ITS answer, tagged 2026-Q3+custom. */
+let RAW = null, BASE = 2.5, RATE = 2.5;
+
+const scale = (v, k = "") => {
+  if (Array.isArray(v)) return v.map((x) => scale(x));
+  if (v && typeof v === "object") {
+    if (v.priced_in === "engineer") return v;
+    return Object.fromEntries(Object.entries(v).map(([key, val]) => [key, scale(val, key)]));
+  }
+  if (typeof v === "number" && /usd/i.test(k)) return v * (RATE / BASE);
+  return v;
+};
+
+fetch("data.json").then((r) => r.json()).then((d) => {
+  RAW = d;
+  BASE = RATE = d.meta.price_book.usd_per_gpu_hour || 2.5;
+  const input = $("#rate");
+  input.value = RATE.toFixed(2);
+  const apply = () => {
+    const v = parseFloat(input.value);
+    if (!(v > 0) || v === RATE) return;
+    RATE = v;
+    draw();
+  };
+  input.addEventListener("change", apply);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") apply(); });
+  controls();
+  draw();
+}).catch((e) => {
   $("#subtitle").textContent = "could not load data.json -- run dashboard/build.py";
   console.error(e);
 });
+
+function draw() {
+  ["#hero", "#tile1", "#tile2", "#tile3", "#tile4", "#extras"].forEach((id) => { $(id).innerHTML = ""; });
+  render(scale(RAW));
+  priceCheck();
+}
+
+/* Ask the API to re-price its own waterfall at the current rate. Proof that the
+   control is an API call, not arithmetic: the response comes back tagged
+   2026-Q3+custom whenever the rate differs from the price book. */
+function priceCheck() {
+  const box = el("p", { class: "pricetag", id: "pricetag", text: "asking the API to re-price at $" + RATE.toFixed(2) + "/GPU-hour..." });
+  $("#tile1").appendChild(box);
+  fetch(`/api/v1/efficiency/summary?usd_per_gpu_hour=${RATE}`)
+    .then((r) => r.json())
+    .then((j) => {
+      const m = j.monetized || {};
+      box.innerHTML = `Live cross-check: <code>GET /v1/efficiency/summary?usd_per_gpu_hour=${RATE}</code> `
+        + `returns <b>${usdFull(m.amount || 0)}</b> allocated, priced as `
+        + `<b>${m.price_book_version || "?"}</b>`
+        + (m.price_book_version && m.price_book_version.includes("custom")
+          ? " &mdash; the API tags a re-priced answer, so a price change never reads as an infrastructure change."
+          : " &mdash; the price book's own rate.");
+    })
+    .catch(() => { box.textContent = "API not reachable from the page; figures above are priced locally at $" + RATE.toFixed(2) + "/GPU-hour."; });
+}
 
 function render(d) {
   const c = d.meta.cluster, rec = d.tile2.recoverable;
   $("#subtitle").innerHTML = `${num(c.nodes)} machines &middot; ${num(c.gpus_per_node * c.nodes)} V100 GPUs &middot; `
     + `${num(c.jobs)} jobs from ${c.users} researchers &middot; ${c.window_days} days &middot; `
-    + `priced at $${d.meta.price_book.usd_per_gpu_hour}/GPU-hour (price book ${d.meta.price_book.version})`;
+    + `priced at $${RATE.toFixed(2)}/GPU-hour `
+    + (RATE === BASE ? `(price book ${d.meta.price_book.version})`
+       : `(<b>${d.meta.price_book.version}+custom</b>, book rate $${BASE.toFixed(2)})`);
 
   /* ---- hero ---- */
   const overTarget = rec.point_usd >= rec.target_usd;
@@ -210,7 +272,7 @@ function render(d) {
           el("div", {}, [
             el("h3", { text: "Where it sits" }),
             table(a.split, [{ h: "Part", k: "label", l: 1 }, { h: "GPU-hours", f: (r) => num(r.gpu_hours) },
-              { h: "USD", f: (r) => usdFull(r.gpu_hours * d.meta.price_book.usd_per_gpu_hour) }]),
+              { h: "USD", f: (r) => usdFull(r.gpu_hours * RATE) }]),
           ]),
         ]),
         el("h3", { style: "margin-top:14px", text: "The jobs behind it (largest first)" }),
@@ -284,11 +346,78 @@ function render(d) {
           { h: "Machine", k: "node", l: 1, mono: 1 }, { h: "Role", k: "role", l: 1 },
         ]) : table(w.rows, [
           { h: "Part of cancelled time", k: "label", l: 1 }, { h: "GPU-hours", f: (r) => num(r.gpu_hours) },
-          { h: "USD", f: (r) => usdFull(r.gpu_hours * d.meta.price_book.usd_per_gpu_hour) },
+          { h: "USD", f: (r) => usdFull(r.gpu_hours * RATE) },
         ]),
       ]) : null,
     ])),
   );
+
+  /* ---- tile 4: the queue, simulated ---- */
+  const sc = d.tile4;
+  if (sc) {
+    const pol = sc.policies, best = pol[pol.length - 1], nowRow = pol[0];
+    $("#tile4").append(
+      el("span", { class: "tileno", text: "Tile 4" }),
+      el("h2", { text: "Would cutting 20% make researchers wait?" }),
+      el("p", { class: "sub", html: `Not if we fix the queue first &mdash; and the queue is not short of hardware. `
+        + `We replayed <b>all ${num(sc.jobs_simulated)} startable jobs</b> (of ${num(sc.jobs_total)} in the `
+        + `dataset) through a discrete-event simulator at ${sc.gpus} GPUs, with each researcher's own `
+        + `concurrency quota in place.` }),
+      el("div", { class: "grid2" }, [
+        el("div", {}, [
+          el("h3", { text: "1. The model, checked against what really happened" }),
+          table(sc.validation, [{ h: "", k: "metric", l: 1 },
+            { h: "Observed", f: (r) => fmtv(r.observed, r.unit) },
+            { h: "Model", f: (r) => fmtv(r.model, r.unit) }]),
+          el("p", { class: "note", html: `The model reproduces <b>${pct(sc.fidelity_total)} of the total waiting</b> `
+            + `and <b>${pct(sc.fidelity)} of the person-hours</b>. Without the quotas it reproduced 5% and 1%: `
+            + `<b>the quota is the constraint</b>, not capacity and not queue order. The rest is work outside `
+            + `this published sample, so every saving below is understated.` }),
+        ]),
+        el("div", {}, [
+          el("h3", { text: "2. Why people wait: their own quota" }),
+          el("p", { class: "meta", html: `Each researcher is capped at a fixed number of GPUs &mdash; the data `
+            + `shows rungs at <b>${sc.caps.ladder.join(" / ")}</b> (${sc.caps.snapped} of ${sc.caps.users} `
+            + `owners sit exactly on one). In <b>90%</b> of waits over an hour, the person was already at their `
+            + `cap, while a median of <b>287 of 450 GPUs sat free</b>.` }),
+          el("p", { class: "meta", html: `So a researcher submits 200 tasks, ${sc.caps.ladder[0]} run, and the `
+            + `rest queue behind their own jobs on a two-thirds idle cluster. Reordering the queue cannot fix `
+            + `that; only the quota can.` }),
+          el("p", { class: "note", html: `Reference run: removing quotas entirely leaves `
+            + `<b>${num(sc.no_caps.person_h)} person-hours</b> against ${num(nowRow.person_h)} today &mdash; `
+            + `confirming the ceiling is what binds.` }),
+        ]),
+      ]),
+      el("div", { style: "margin-top:18px" }, [
+        el("h3", { text: "3. Now vs optimized — person-hours researchers spend waiting" }),
+        bars(pol.map((r) => ({ label: r.policy.replace("NOW: ", ""), usd: r.person_h,
+                               note: r.delta_pct ? `${(r.delta_pct * 100).toFixed(0)}% vs today` : "today" })),
+          { aria: "person-hours waiting by policy", fmt: (v) => num(v) + " h", labelW: 230 }),
+        el("p", { class: "legend", html: `<span><span class="swatch" style="background:var(--series-1)"></span>`
+          + `person-hours waiting (each researcher's overlapping waits merged, so one person waiting on 200 `
+          + `tasks counts once)</span>` }),
+        table(pol.concat([sc.no_caps]), [
+          { h: "Policy", k: "policy", l: 1 }, { h: "Person-hours", f: (r) => num(r.person_h) },
+          { h: "vs today", f: (r) => r.delta_pct ? (r.delta_pct * 100).toFixed(0) + "%" : "—" },
+          { h: "Jobs over 4h", f: (r) => num(r.over_4h) }, { h: "p95", f: (r) => r.p95_h + " h" },
+          { h: "p99", f: (r) => r.p99_h + " h" },
+          { h: "Researcher time, at most (at $95/h)", f: (r) => usdFull(r.usd) }]),
+        el("p", { class: "meta", html: `<b>The fix returns ${num(Math.abs(best.delta_person_h))} person-hours `
+          + `of researcher time</b> &mdash; up to ${usdFull(Math.abs(best.delta_usd))} if that waiting is fully `
+          + `blocking &mdash; and costs no capacity: it hands out cards that are already idle. The idle timeout from `
+          + `tile 2 appears here too &mdash; it returns GPU money <i>and</i> shortens the queue, because an idle `
+          + `job holds a slot against its owner's quota.` }),
+      ]),
+      dial(sc, nowRow, rec),
+      el("p", { class: "risk", style: "margin-top:16px",
+        html: `<b>If we are wrong:</b> the quotas exist to stop one researcher taking the cluster in a busy `
+          + `week, and we simulated the extra jobs as ordinary ones &mdash; with preemption, some of that work `
+          + `would be interrupted and resubmitted. The quota values are inferred from each owner's observed `
+          + `peak concurrency, not read from Slurm, so the size of the effect could move; the no-quota reference `
+          + `run shows the direction does not. And this buys <b>researcher time, not GPU-hours</b>: it does not `
+          + `contribute to the 20% cut, it is what makes the cut safe to take.` }),
+    );
+  }
 
   /* ---- extras: hardware, triage, queue, clear rules ---- */
   const tri = d.triage.summary;
@@ -359,7 +488,96 @@ function render(d) {
     + ` The detection API was ${d.meta.api_up ? "live when this page was built" : "unreachable when this page was built; figures come from the local tables"}.`
     + ` Full working, case by case, in <code>track-2/ANALYSIS.md</code>; machine-readable numbers in <code>claims.json</code>.`;
 
-  /* ---- controls ---- */
+  /* (controls are wired once, in controls()) */
+}
+
+/* ------------------------------------------------- tile 4: the policy dial */
+/* Each setting is a precomputed full replay of every startable job -- the slider
+   selects between real simulation runs, it does not interpolate. */
+function dial(sc, nowRow, rec) {
+  const THRS = [null, 0.5, 0.6, 0.7, 0.8, 0.9];
+  const pick = (thr, kill) => sc.grid.find((r) => r.threshold === thr && r.idle_kill === kill);
+  let idx = 3, kill = true;                 // opens on our recommendation: 70% + timeout
+
+  const slider = el("input", { type: "range", min: 0, max: THRS.length - 1, step: 1, value: idx,
+                               "aria-label": "allocation threshold below which quotas are lifted" });
+  const box = el("input", { type: "checkbox", id: "killbox" });
+  box.checked = kill;
+  const thrLabel = el("span", { class: "mono", style: "color:var(--text-primary)" });
+  const out = el("div", { class: "readout" });
+  const chart = el("div", { style: "margin-top:14px" });
+  const note = el("p", { class: "note" });
+
+  function paint() {
+    const thr = THRS[idx];
+    const r = pick(thr, kill) || nowRow;
+    const today = pick(null, false);
+    const saved = today.person_h - r.person_h;
+    thrLabel.textContent = thr === null ? "off — quotas always enforced" : `below ${(thr * 100).toFixed(0)}% allocated`;
+    out.innerHTML = "";
+    out.append(
+      el("div", {}, [
+        el("div", { class: "big", text: num(r.person_h) + " h" }),
+        el("div", { class: "unit", text: "person-hours researchers spend waiting" }),
+      ]),
+      el("div", {}, [
+        el("div", { class: "delta " + (saved > 0 ? "ok" : saved < 0 ? "bad" : ""),
+                    text: saved === 0 ? "no change" : `${saved > 0 ? "−" : "+"}${pct(Math.abs(saved) / today.person_h)} vs today` }),
+        el("div", { class: "unit", html: `worth ${saved >= 0 ? "up to" : "minus"} `
+          + `<b>${usdFull(Math.abs(saved) * sc.usd_per_engineer_hour)}</b> if that waiting fully blocks `
+          + `the researcher` }),
+      ]),
+      el("div", {}, [el("div", { class: "delta", text: num(r.over_4h) }), el("div", { class: "unit", text: "jobs still wait over 4 h" })]),
+      el("div", {}, [el("div", { class: "delta", text: r.p95_h + " h" }), el("div", { class: "unit", text: "p95 wait" })]),
+      el("div", {}, [el("div", { class: "delta", text: r.p99_h + " h" }), el("div", { class: "unit", text: "p99 wait" })]),
+    );
+    chart.innerHTML = "";
+    chart.appendChild(bars([
+      { label: "Today", usd: today.person_h, note: "quotas always enforced" },
+      { label: "This setting", usd: r.person_h, note: thrLabel.textContent + (kill ? ", with the idle timeout" : "") },
+      { label: "No quotas at all (reference)", usd: sc.no_caps.person_h, dim: true, note: "what removing the ceiling entirely would give" },
+    ], { aria: "person-hours waiting under the chosen policy", fmt: (v) => num(v) + " h", labelW: 250 }));
+    note.innerHTML = thr !== null && thr >= 0.8
+      ? `Above 80% the curve flattens and wobbles &mdash; ${num(pick(0.8, kill).person_h)} h at 80% against `
+        + `${num(pick(0.9, kill).person_h)} h at 90% &mdash; because more jobs start early and then compete with `
+        + `each other. <b>70% is the setting we would ship</b>: a third of the cluster stays governed by quota `
+        + `for genuinely busy hours.`
+      : `<b>70% with the idle timeout is the setting we would ship.</b> Lower thresholds leave researchers `
+        + `waiting; higher ones leave the quota with almost nothing to do, which is a fairness decision rather `
+        + `than a technical one.`;
+  }
+
+  slider.addEventListener("input", () => { idx = +slider.value; paint(); });
+  box.addEventListener("change", () => { kill = box.checked; paint(); });
+  paint();
+
+  return el("div", { style: "margin-top:18px" }, [
+    el("h3", { text: "4. Try the fix" }),
+    el("p", { class: "meta", text: "Let a researcher exceed their own quota while the cluster is quiet. "
+      + "Those extra jobs would be preemptible, so the quota reasserts itself the moment the machine gets busy." }),
+    el("div", { class: "dial" }, [
+      el("div", { class: "dialrow" }, [
+        el("label", {}, [el("span", { text: "Lift quotas:" }), slider, thrLabel]),
+        el("label", { for: "killbox" }, [box, el("span", { text: "also end allocations idle for 1 h" })]),
+      ]),
+      out,
+      chart,
+      note,
+    ]),
+    el("p", { class: "note", html: `<b>Hours are the honest unit here.</b> The dollar figure prices waiting at `
+      + `the price book's $${sc.usd_per_engineer_hour}/engineer-hour and so assumes the wait fully blocks the `
+      + `person &mdash; the same assumption we argue against in <code>/v1/queue/latency</code> (tile 3). A `
+      + `researcher waiting on a batch job usually works on something else, and nothing in this data measures `
+      + `how much. It is an upper bound, and it is <b>not added to the `
+      + `${usd(rec.point_usd)} of GPU savings</b>: that is cash you stop spending, this is throughput you get `
+      + `back.` }),
+    el("p", { class: "note", html: `Every setting on that slider is a <b>full replay of all `
+      + `${num(sc.jobs_simulated)} startable jobs</b> at ${sc.gpus} GPUs, computed when this page was built `
+      + `(12 simulations). The slider selects between real runs &mdash; it does not interpolate.` }),
+  ]);
+}
+
+function controls() {
   const themeBtn = $("#theme");
   const startDark = matchMedia("(prefers-color-scheme: dark)").matches;
   let dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : startDark;

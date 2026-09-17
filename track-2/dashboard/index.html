@@ -139,6 +139,18 @@
     padding: 7px 10px; font-size: 12.5px; box-shadow: var(--shadow); z-index: 20; max-width: 280px;
   }
   #tip b { font-variant-numeric: tabular-nums; }
+  /* interactive policy dial (tile 4) */
+  .dial { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 12px; background: var(--surface-2); }
+  .dialrow { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; }
+  .dialrow label { font-size: 13px; color: var(--text-secondary); display: flex; gap: 8px; align-items: center; }
+  input[type=range] { width: 260px; accent-color: var(--series-1); }
+  input[type=checkbox] { accent-color: var(--series-1); width: 15px; height: 15px; }
+  .readout { display: flex; flex-wrap: wrap; gap: 26px; margin-top: 16px; align-items: flex-end; }
+  .readout .big { font-size: 38px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
+  .readout .unit { font-size: 13px; color: var(--text-secondary); }
+  .delta { font-size: 13px; font-weight: 600; }
+  .pricetag { font-size: 11px; color: var(--text-muted); }
+  .pricetag b { color: var(--series-1); }
   .bad { color: var(--critical); }
   .ok { color: var(--good); }
 </style>
@@ -150,7 +162,12 @@
       <h1>GPU spend review &mdash; MIT SuperCloud sample</h1>
       <p class="sub" id="subtitle">loading&hellip;</p>
     </div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="ghost" style="display:flex;gap:6px;align-items:center" title="Re-price everything. The API re-tags its response 2026-Q3+custom.">
+        $<input id="rate" type="number" min="0.1" max="50" step="0.25" value="2.50"
+               style="width:62px;background:transparent;border:0;color:inherit;font:inherit">
+        <span style="color:var(--text-secondary)">/GPU-hour</span>
+      </label>
       <button class="ghost" id="tables">Show all tables</button>
       <button class="ghost" id="theme">Dark</button>
     </div>
@@ -160,6 +177,7 @@
   <section class="card" id="tile1"></section>
   <section class="card" id="tile2"></section>
   <section class="card" id="tile3"></section>
+  <section class="card" id="tile4"></section>
   <section class="card" id="extras"></section>
   <footer id="footer"></footer>
 </div>
