@@ -1,0 +1,836 @@
+{
+ "team": "REPLACE ME before submitting",
+ "recoverable_gpu_hours": {
+  "point": 143763,
+  "low": 80767,
+  "high": 196365,
+  "confidence": 0.6,
+  "basis": "Case 2. Every job is placed in exactly one waste class so no GPU-hour is counted twice, and the hours come from jobs.parquet rather than from the findings' impact_gpu_hours (summing those gives 157% of the cluster). Point = all hours of jobs that completed without ever running a kernel (12,301) + hours returned by a 1-hour idle timeout on jobs that never ran a kernel and did not complete (81,878) + half of near-idle jobs' idle hours (42,305) + half of idle second cards (7,280). Low = half the completed-never-ran hours + a conservative 4-hour idle timeout. High = no grace period + all near-idle idle hours + all idle-card hours. The half weights on the near-idle and card classes are judgement: 2,564 jobs (43,217 GPU-h) average under 5% but peak above 50%, so a policy keyed on average utilisation would kill real bursty work. CANCELLED is not counted as waste in itself. Excluded on purpose: gpu-memory-oversized (its jobs compute at 49%), and TIMEOUT jobs that were busy (real work destroyed at the wall clock, which checkpointing fixes rather than a cut)."
+ },
+ "recoverable_usd": {
+  "point": 359408,
+  "low": 201918,
+  "high": 490913,
+  "confidence": 0.6,
+  "basis": "The GPU-hours above at the price book's $2.50/GPU-hour (2026-Q3)."
+ },
+ "cancelled_is_waste": false,
+ "cancelled_rationale": "Case 2. Cancelled jobs ran at 34.3% hour-weighted utilisation against the cluster's 38.5%, and 116,692 of their 203,930 GPU-hours fall into no waste class at all -- they were computing when someone stopped them. A cancellation is usually a researcher correctly killing a run that looked wrong, which is good practice we do not want to discourage. What IS waste is the idle time before the cancel, and classes A2 and B already capture it whatever the job's final state: 36,101 GPU-h of cancelled jobs never ran a kernel and 36,556 were near-idle. Counting all of CANCELLED would roughly double the headline by promising work that was already useful.",
+ "node_triage": [
+  {
+   "node": "r204106-n172107",
+   "window": 0,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 20/33 FAILED here vs cluster 0.291. 20 failures vs 11.1 expected from owners' own rates elsewhere (Poisson p=0.0102) -- more than the work explains, spread over 11 owners, 0 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r216287-n200569",
+   "window": 0,
+   "cause": "hardware",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 188/243 FAILED here vs cluster 0.291. Exit status (exit_code//256) signature: status 135 x 3 owners -- each owner crashed here with it and on no other machine in 4 months. Node failures located here (nodefail_nodes): 0. Several unrelated people failing the same way only here points at the machine.",
+   "verdict": "act"
+  },
+  {
+   "node": "r2684277-n303509",
+   "window": 0,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 67/145 FAILED here vs cluster 0.291. 67 failures vs 51.3 expected from owners' own rates elsewhere (Poisson p=0.0199) -- more than the work explains, spread over 6 owners, 1 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r3955005-n750018",
+   "window": 0,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 22/45 FAILED here vs cluster 0.291. 22 failures vs 14.9 expected from owners' own rates elsewhere (Poisson p=0.0493) -- more than the work explains, spread over 5 owners, 2 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r3974592-n172107",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 106/139 FAILED here vs cluster 0.291. Owner u-11631751931 holds 94% of failures (100/116 here) and fails 943/3451 on other machines in the same window; array siblings elsewhere failed 215/227. Everyone else here failed 6/23 (binomial vs cluster p=0.70, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r3974592-n303509",
+   "window": 0,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 47/112 FAILED here vs cluster 0.291. No single owner dominates (6 owners failing, top 53%). Using each owner's own FAILED rate on other machines in the same window (99% of jobs have a baseline), the expected count is 42.8 vs 47 observed (Poisson p=0.28). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r3974592-n717709",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 64/138 FAILED here vs cluster 0.291. Owner u-21965460765 holds 69% of failures (44/57 here) and fails 689/1612 on other machines in the same window; array siblings elsewhere failed 677/693. Everyone else here failed 20/81 (binomial vs cluster p=0.84, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r5179276-n200569",
+   "window": 0,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 54/116 FAILED here vs cluster 0.291. 54 failures vs 35.8 expected from owners' own rates elsewhere (Poisson p=0.00264) -- more than the work explains, spread over 8 owners, 2 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r5179276-n750018",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 57/82 FAILED here vs cluster 0.291. Owner u-21965460765 holds 77% of failures (44/45 here) and fails 689/1624 on other machines in the same window; array siblings elsewhere failed 677/693. Everyone else here failed 13/37 (binomial vs cluster p=0.26, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r5179276-n772143",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 254/379 FAILED here vs cluster 0.291. Owner u-11631751931 holds 87% of failures (221/284 here) and fails 822/3283 on other machines in the same window; array siblings elsewhere failed 397/491. Everyone else here failed 33/95 (binomial vs cluster p=0.14, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r5198790-n200569",
+   "window": 0,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 28/59 FAILED here vs cluster 0.291. No single owner dominates (10 owners failing, top 29%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 22.6 vs 28 observed (Poisson p=0.15). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7269000-n303509",
+   "window": 0,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 41/101 FAILED here vs cluster 0.291. No single owner dominates (10 owners failing, top 59%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 34.9 vs 41 observed (Poisson p=0.17). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7317916-n303509",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 98/151 FAILED here vs cluster 0.291. Owner u-11631751931 holds 96% of failures (94/125 here) and fails 949/3442 on other machines in the same window; array siblings elsewhere failed 187/190. Everyone else here failed 4/26 (binomial vs cluster p=0.97, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7317916-n750018",
+   "window": 0,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 19/39 FAILED here vs cluster 0.291. No single owner dominates (5 owners failing, top 53%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 16.5 vs 19 observed (Poisson p=0.30). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7753495-n717709",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 215/305 FAILED here vs cluster 0.291. Owner u-11631751931 holds 92% of failures (197/233 here) and fails 846/3334 on other machines in the same window; array siblings elsewhere failed 340/434. Everyone else here failed 18/72 (binomial vs cluster p=0.81, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7753495-n750018",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 39/77 FAILED here vs cluster 0.291. Owner u-11631751931 holds 69% of failures (27/44 here) and fails 1016/3523 on other machines in the same window; array siblings elsewhere failed 70/92. Everyone else here failed 12/33 (binomial vs cluster p=0.23, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r8141575-n469339",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 154/365 FAILED here vs cluster 0.291. Owner u-11631751931 holds 68% of failures (105/215 here) and fails 938/3352 on other machines in the same window; array siblings elsewhere failed 446/563. Everyone else here failed 49/150 (binomial vs cluster p=0.19, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9170217-n717709",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 44/87 FAILED here vs cluster 0.291. Owner u-11631751931 holds 70% of failures (31/46 here) and fails 1012/3521 on other machines in the same window; array siblings elsewhere failed 89/89. Everyone else here failed 13/41 (binomial vs cluster p=0.41, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9480604-n469339",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 61/108 FAILED here vs cluster 0.291. Owner u-21965460765 holds 69% of failures (42/49 here) and fails 691/1620 on other machines in the same window; array siblings elsewhere failed 679/694. Everyone else here failed 19/59 (binomial vs cluster p=0.35, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r974863-n303766",
+   "window": 0,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 44/103 FAILED here vs cluster 0.291. Owner u-65160314285 holds 68% of failures (30/37 here) and fails 252/504 on other machines in the same window; array siblings elsewhere failed 95/111. Everyone else here failed 14/66 (binomial vs cluster p=0.94, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9988778-n303766",
+   "window": 0,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 0 (14 d from first job, by time_end): 43/107 FAILED here vs cluster 0.291. No single owner dominates (5 owners failing, top 58%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 35.3 vs 43 observed (Poisson p=0.11). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r204106-n750018",
+   "window": 1,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 1 (14 d from first job, by time_end): 17/33 FAILED here vs cluster 0.272. No single owner dominates (6 owners failing, top 47%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 13.7 vs 17 observed (Poisson p=0.22). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r216287-n303509",
+   "window": 1,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 1 (14 d from first job, by time_end): 27/54 FAILED here vs cluster 0.272. 27 failures vs 18.9 expected from owners' own rates elsewhere (Poisson p=0.0468) -- more than the work explains, spread over 3 owners, 1 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r2215649-n303766",
+   "window": 1,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 1 (14 d from first job, by time_end): 22/49 FAILED here vs cluster 0.272. No single owner dominates (6 owners failing, top 41%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 19.5 vs 22 observed (Poisson p=0.32). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4144777-n717709",
+   "window": 1,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 1 (14 d from first job, by time_end): 28/50 FAILED here vs cluster 0.272. Owner u-63101566374 holds 68% of failures (19/28 here) and fails 180/366 on other machines in the same window; array siblings elsewhere failed 79/88. Everyone else here failed 9/22 (binomial vs cluster p=0.12, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4683026-n303509",
+   "window": 1,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 1 (14 d from first job, by time_end): 19/42 FAILED here vs cluster 0.272. No single owner dominates (9 owners failing, top 26%). Using each owner's own FAILED rate on other machines in the same window (98% of jobs have a baseline), the expected count is 14.1 vs 19 observed (Poisson p=0.13). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7317916-n303509",
+   "window": 1,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 1 (14 d from first job, by time_end): 32/53 FAILED here vs cluster 0.272. No single owner dominates (4 owners failing, top 59%). Using each owner's own FAILED rate on other machines in the same window (98% of jobs have a baseline), the expected count is 23.9 vs 32 observed (Poisson p=0.06). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9659953-n172107",
+   "window": 1,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 1 (14 d from first job, by time_end): 25/46 FAILED here vs cluster 0.272. u-51767580430 fails 16/23 here but only 22/83 elsewhere in the window (siblings none); others here 9/23 look normal. Could be the machine or different work sent here. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r974863-n410412",
+   "window": 1,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 1 (14 d from first job, by time_end): 30/72 FAILED here vs cluster 0.272. No single owner dominates (8 owners failing, top 47%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 23.9 vs 30 observed (Poisson p=0.13). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r1039410-n200569",
+   "window": 2,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 11/32 FAILED here vs cluster 0.054. u-62740707161 (8/10 here) ran only 2 job(s) elsewhere in the window and no array siblings elsewhere, so there is no like-for-like baseline. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r1900814-n750018",
+   "window": 2,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 22/73 FAILED here vs cluster 0.054. u-65160314285 dominates (68%), but everyone else here also failed 7/27 (p=0.000 vs cluster), so the machine is not cleared. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r204106-n200569",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 9/33 FAILED here vs cluster 0.054. No single owner dominates (5 owners failing, top 33%). Using each owner's own FAILED rate on other machines in the same window (94% of jobs have a baseline), the expected count is 12.4 vs 9 observed (Poisson p=0.87). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r204106-n750018",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 10/53 FAILED here vs cluster 0.054. No single owner dominates (3 owners failing, top 50%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 11.1 vs 10 observed (Poisson p=0.67). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r216287-n303509",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 23/68 FAILED here vs cluster 0.054. No single owner dominates (5 owners failing, top 52%). Using each owner's own FAILED rate on other machines in the same window (99% of jobs have a baseline), the expected count is 20.2 vs 23 observed (Poisson p=0.29). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r2215649-n469339",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 9/30 FAILED here vs cluster 0.054. No single owner dominates (5 owners failing, top 44%). Using each owner's own FAILED rate on other machines in the same window (97% of jobs have a baseline), the expected count is 10.5 vs 9 observed (Poisson p=0.72). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r2684277-n303509",
+   "window": 2,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 16/44 FAILED here vs cluster 0.054. Owner u-32801634342 holds 81% of failures (13/15 here) and fails 80/146 on other machines in the same window; array siblings elsewhere failed none. Everyone else here failed 3/29 (binomial vs cluster p=0.20, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r368967-n750018",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 10/47 FAILED here vs cluster 0.054. No single owner dominates (6 owners failing, top 50%). Using each owner's own FAILED rate on other machines in the same window (98% of jobs have a baseline), the expected count is 8.1 vs 10 observed (Poisson p=0.29). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r3955005-n750018",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 7/31 FAILED here vs cluster 0.054. No single owner dominates (4 owners failing, top 29%). Using each owner's own FAILED rate on other machines in the same window (97% of jobs have a baseline), the expected count is 7.4 vs 7 observed (Poisson p=0.60). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r3955005-n772143",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 8/33 FAILED here vs cluster 0.054. No single owner dominates (5 owners failing, top 38%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 7.9 vs 8 observed (Poisson p=0.53). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4099734-n200569",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 10/48 FAILED here vs cluster 0.054. No single owner dominates (6 owners failing, top 30%). Using each owner's own FAILED rate on other machines in the same window (98% of jobs have a baseline), the expected count is 9.8 vs 10 observed (Poisson p=0.51). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4144777-n303509",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 6/33 FAILED here vs cluster 0.054. No single owner dominates (2 owners failing, top 50%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 9.0 vs 6 observed (Poisson p=0.88). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4683026-n303509",
+   "window": 2,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 22/47 FAILED here vs cluster 0.054. 22 failures vs 14.4 expected from owners' own rates elsewhere (Poisson p=0.0383) -- more than the work explains, spread over 4 owners, 3 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r5354770-n750018",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 14/37 FAILED here vs cluster 0.054. No single owner dominates (7 owners failing, top 36%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 10.5 vs 14 observed (Poisson p=0.17). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r6707841-n200569",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 16/32 FAILED here vs cluster 0.054. No single owner dominates (6 owners failing, top 25%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 10.9 vs 16 observed (Poisson p=0.09). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r6707841-n750018",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 10/37 FAILED here vs cluster 0.054. No single owner dominates (6 owners failing, top 50%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 12.4 vs 10 observed (Poisson p=0.79). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7269000-n303509",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 19/41 FAILED here vs cluster 0.054. No single owner dominates (3 owners failing, top 53%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 12.8 vs 19 observed (Poisson p=0.06). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7317916-n717709",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 12/43 FAILED here vs cluster 0.054. No single owner dominates (5 owners failing, top 25%). Using each owner's own FAILED rate on other machines in the same window (95% of jobs have a baseline), the expected count is 9.3 vs 12 observed (Poisson p=0.23). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7753495-n303509",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 7/35 FAILED here vs cluster 0.054. No single owner dominates (2 owners failing, top 57%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 8.7 vs 7 observed (Poisson p=0.77). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r810901-n303509",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 25/71 FAILED here vs cluster 0.054. No single owner dominates (4 owners failing, top 48%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 21.2 vs 25 observed (Poisson p=0.23). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r8532701-n750018",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 22/62 FAILED here vs cluster 0.054. No single owner dominates (6 owners failing, top 45%). Using each owner's own FAILED rate on other machines in the same window (98% of jobs have a baseline), the expected count is 17.9 vs 22 observed (Poisson p=0.19). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r8972851-n303509",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 21/62 FAILED here vs cluster 0.054. No single owner dominates (10 owners failing, top 38%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 16.2 vs 21 observed (Poisson p=0.15). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9852763-n172107",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 6/33 FAILED here vs cluster 0.054. No single owner dominates (5 owners failing, top 33%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 7.3 vs 6 observed (Poisson p=0.73). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9852763-n200569",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 20/52 FAILED here vs cluster 0.054. No single owner dominates (9 owners failing, top 30%). Using each owner's own FAILED rate on other machines in the same window (98% of jobs have a baseline), the expected count is 13.5 vs 20 observed (Poisson p=0.06). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9852763-n772143",
+   "window": 2,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 2 (14 d from first job, by time_end): 10/45 FAILED here vs cluster 0.054. No single owner dominates (6 owners failing, top 40%). Using each owner's own FAILED rate on other machines in the same window (98% of jobs have a baseline), the expected count is 11.6 vs 10 observed (Poisson p=0.73). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r216287-n200569",
+   "window": 3,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 3 (14 d from first job, by time_end): 33/62 FAILED here vs cluster 0.310. Owner u-17994260715 holds 61% of failures (20/27 here) and fails 180/483 on other machines in the same window; array siblings elsewhere failed 180/180. Everyone else here failed 13/35 (binomial vs cluster p=0.27, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4144777-n172107",
+   "window": 3,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 3 (14 d from first job, by time_end): 25/33 FAILED here vs cluster 0.310. u-29813024879 fails 23/27 here but only 14/61 elsewhere in the window (siblings none); others here 2/6 look normal. Could be the machine or different work sent here. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r4683026-n200569",
+   "window": 3,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 3 (14 d from first job, by time_end): 38/80 FAILED here vs cluster 0.310. u-17994260715 dominates (63%), but everyone else here also failed 14/29 (p=0.038 vs cluster), so the machine is not cleared. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r6727430-n303509",
+   "window": 3,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 3 (14 d from first job, by time_end): 29/63 FAILED here vs cluster 0.310. No single owner dominates (6 owners failing, top 34%). Using each owner's own FAILED rate on other machines in the same window (98% of jobs have a baseline), the expected count is 25.5 vs 29 observed (Poisson p=0.27). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7317916-n172107",
+   "window": 3,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 3 (14 d from first job, by time_end): 49/84 FAILED here vs cluster 0.310. 49 failures vs 33.4 expected from owners' own rates elsewhere (Poisson p=0.00676) -- more than the work explains, spread over 9 owners, 1 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r7419443-n948219",
+   "window": 3,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 3 (14 d from first job, by time_end): 27/45 FAILED here vs cluster 0.310. Owner u-3775768137 holds 70% of failures (19/19 here) and fails 265/290 on other machines in the same window; array siblings elsewhere failed 135/135. Everyone else here failed 8/26 (binomial vs cluster p=0.58, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r8972851-n172107",
+   "window": 3,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 3 (14 d from first job, by time_end): 24/39 FAILED here vs cluster 0.310. No single owner dominates (6 owners failing, top 42%). Using each owner's own FAILED rate on other machines in the same window (97% of jobs have a baseline), the expected count is 22.2 vs 24 observed (Poisson p=0.38). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r1900814-n200569",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 57/86 FAILED here vs cluster 0.330. Owner u-17994260715 holds 74% of failures (42/54 here) and fails 1136/1611 on other machines in the same window; array siblings elsewhere failed 816/856. Everyone else here failed 15/32 (binomial vs cluster p=0.07, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r2684277-n303509",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 35/70 FAILED here vs cluster 0.330. Owner u-17994260715 holds 83% of failures (29/29 here) and fails 1149/1636 on other machines in the same window; array siblings elsewhere failed 471/471. Everyone else here failed 6/41 (binomial vs cluster p=1.00, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r3974592-n750018",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 20/35 FAILED here vs cluster 0.330. Owner u-11631751931 holds 70% of failures (14/14 here) and fails 143/209 on other machines in the same window; array siblings elsewhere failed 98/98. Everyone else here failed 6/21 (binomial vs cluster p=0.74, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4099734-n200569",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 110/156 FAILED here vs cluster 0.330. Owner u-17994260715 holds 88% of failures (97/108 here) and fails 1081/1557 on other machines in the same window; array siblings elsewhere failed 1013/1058. Everyone else here failed 13/48 (binomial vs cluster p=0.85, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4144777-n172107",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 108/186 FAILED here vs cluster 0.330. Owner u-17994260715 holds 75% of failures (81/112 here) and fails 1097/1553 on other machines in the same window; array siblings elsewhere failed 881/934. Everyone else here failed 27/74 (binomial vs cluster p=0.30, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4605940-n772143",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 94/158 FAILED here vs cluster 0.330. Owner u-17994260715 holds 86% of failures (81/120 here) and fails 1097/1545 on other machines in the same window; array siblings elsewhere failed 1077/1120. Everyone else here failed 13/38 (binomial vs cluster p=0.50, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r5051220-n172107",
+   "window": 4,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 45/83 FAILED here vs cluster 0.330. 45 failures vs 29.4 expected from owners' own rates elsewhere (Poisson p=0.00439) -- more than the work explains, spread over 11 owners, 2 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r5051220-n200569",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 135/188 FAILED here vs cluster 0.330. Owner u-17994260715 holds 83% of failures (112/126 here) and fails 1066/1539 on other machines in the same window; array siblings elsewhere failed 842/882. Everyone else here failed 23/62 (binomial vs cluster p=0.29, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r5051220-n772143",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 52/107 FAILED here vs cluster 0.330. Owner u-17994260715 holds 92% of failures (48/87 here) and fails 1130/1578 on other machines in the same window; array siblings elsewhere failed 552/556. Everyone else here failed 4/20 (binomial vs cluster p=0.94, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7141590-n772143",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 68/121 FAILED here vs cluster 0.330. Owner u-17994260715 holds 78% of failures (53/71 here) and fails 1125/1594 on other machines in the same window; array siblings elsewhere failed 705/748. Everyone else here failed 15/50 (binomial vs cluster p=0.72, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7317916-n772143",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 63/124 FAILED here vs cluster 0.330. Owner u-17994260715 holds 60% of failures (38/55 here) and fails 1140/1610 on other machines in the same window; array siblings elsewhere failed 820/861. Everyone else here failed 25/69 (binomial vs cluster p=0.32, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7419443-n172107",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 57/81 FAILED here vs cluster 0.330. Owner u-17994260715 holds 84% of failures (48/51 here) and fails 1130/1614 on other machines in the same window; array siblings elsewhere failed 310/350. Everyone else here failed 9/30 (binomial vs cluster p=0.70, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7753495-n172107",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 69/111 FAILED here vs cluster 0.330. Owner u-17994260715 holds 87% of failures (60/80 here) and fails 1118/1585 on other machines in the same window; array siblings elsewhere failed 758/797. Everyone else here failed 9/31 (binomial vs cluster p=0.74, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r810901-n172107",
+   "window": 4,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 91/157 FAILED here vs cluster 0.330. 91 failures vs 75.7 expected from owners' own rates elsewhere (Poisson p=0.0476) -- more than the work explains, spread over 10 owners, 1 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r810901-n303509",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 46/60 FAILED here vs cluster 0.330. Owner u-17994260715 holds 85% of failures (39/39 here) and fails 1139/1626 on other machines in the same window; array siblings elsewhere failed 561/561. Everyone else here failed 7/21 (binomial vs cluster p=0.57, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r8473362-n410412",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 56/115 FAILED here vs cluster 0.330. Owner u-17994260715 holds 71% of failures (40/40 here) and fails 1138/1625 on other machines in the same window; array siblings elsewhere failed 518/560. Everyone else here failed 16/75 (binomial vs cluster p=0.99, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r8972851-n750018",
+   "window": 4,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 32/57 FAILED here vs cluster 0.330. 32 failures vs 18.5 expected from owners' own rates elsewhere (Poisson p=0.00267) -- more than the work explains, spread over 7 owners, 2 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r9659953-n772143",
+   "window": 4,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 4 (14 d from first job, by time_end): 67/130 FAILED here vs cluster 0.330. Owner u-17994260715 holds 69% of failures (46/70 here) and fails 1132/1595 on other machines in the same window; array siblings elsewhere failed 554/558. Everyone else here failed 21/60 (binomial vs cluster p=0.42, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r5179276-n200569",
+   "window": 5,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 5 (14 d from first job, by time_end): 16/30 FAILED here vs cluster 0.272. Owner u-23179844863 holds 81% of failures (13/15 here) and fails 127/173 on other machines in the same window; array siblings elsewhere failed 3/3. Everyone else here failed 3/15 (binomial vs cluster p=0.82, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7419443-n717709",
+   "window": 5,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 5 (14 d from first job, by time_end): 25/43 FAILED here vs cluster 0.272. Owner u-63101566374 holds 60% of failures (15/17 here) and fails 21/387 on other machines in the same window; array siblings elsewhere failed 12/12. Everyone else here failed 10/26 (binomial vs cluster p=0.14, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r8532701-n772143",
+   "window": 5,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 5 (14 d from first job, by time_end): 33/62 FAILED here vs cluster 0.272. 33 failures vs 22.5 expected from owners' own rates elsewhere (Poisson p=0.0224) -- more than the work explains, spread over 5 owners, 1 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r9170217-n200569",
+   "window": 5,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 5 (14 d from first job, by time_end): 25/45 FAILED here vs cluster 0.272. u-65160314285 fails 23/33 here but only 233/1287 elsewhere in the window (siblings none); others here 2/12 look normal. Could be the machine or different work sent here. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r9170217-n717709",
+   "window": 5,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 5 (14 d from first job, by time_end): 26/50 FAILED here vs cluster 0.272. No single owner dominates (7 owners failing, top 38%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 21.8 vs 26 observed (Poisson p=0.21). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9852763-n200569",
+   "window": 5,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 5 (14 d from first job, by time_end): 15/31 FAILED here vs cluster 0.272. Owner u-23179844863 holds 60% of failures (9/9 here) and fails 131/179 on other machines in the same window; array siblings elsewhere failed 27/27. Everyone else here failed 6/22 (binomial vs cluster p=0.58, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r2215649-n410412",
+   "window": 6,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 6 (14 d from first job, by time_end): 209/244 FAILED here vs cluster 0.243. u-65160314285 fails 198/204 here but only 292/1651 elsewhere in the window (siblings none); others here 11/40 look normal. Could be the machine or different work sent here. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r2684277-n750018",
+   "window": 6,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 6 (14 d from first job, by time_end): 26/48 FAILED here vs cluster 0.243. 26 failures vs 14.9 expected from owners' own rates elsewhere (Poisson p=0.0055) -- more than the work explains, spread over 8 owners, 2 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r4683026-n303509",
+   "window": 6,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 6 (14 d from first job, by time_end): 158/216 FAILED here vs cluster 0.243. u-65160314285 fails 158/210 here but only 332/1645 elsewhere in the window (siblings none); others here 0/6 look normal. Could be the machine or different work sent here. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r1039410-n772143",
+   "window": 7,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 7 (14 d from first job, by time_end): 29/51 FAILED here vs cluster 0.334. No single owner dominates (6 owners failing, top 52%). Using each owner's own FAILED rate on other machines in the same window (96% of jobs have a baseline), the expected count is 23.3 vs 29 observed (Poisson p=0.14). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4144777-n172107",
+   "window": 7,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 7 (14 d from first job, by time_end): 30/53 FAILED here vs cluster 0.334. u-29813024879 fails 19/20 here but only 19/69 elsewhere in the window (siblings none); others here 11/33 look normal. Could be the machine or different work sent here. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r6959555-n772143",
+   "window": 7,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 7 (14 d from first job, by time_end): 30/59 FAILED here vs cluster 0.334. No single owner dominates (5 owners failing, top 43%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 25.8 vs 30 observed (Poisson p=0.23). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7317916-n172107",
+   "window": 7,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 7 (14 d from first job, by time_end): 193/234 FAILED here vs cluster 0.334. 193 failures vs 87.1 expected from owners' own rates elsewhere (Poisson p=9.92e-23) -- more than the work explains, spread over 14 owners, 4 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r1039410-n772143",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 34/55 FAILED here vs cluster 0.331. Owner u-49373354431 holds 94% of failures (32/41 here) and fails 603/2295 on other machines in the same window; array siblings elsewhere failed 568/568. Everyone else here failed 2/14 (binomial vs cluster p=0.97, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r2684277-n750018",
+   "window": 8,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 23/44 FAILED here vs cluster 0.331. 23 failures vs 13.6 expected from owners' own rates elsewhere (Poisson p=0.0121) -- more than the work explains, spread over 9 owners, 1 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r2684277-n772143",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 54/85 FAILED here vs cluster 0.331. Owner u-49373354431 holds 89% of failures (48/62 here) and fails 587/2274 on other machines in the same window; array siblings elsewhere failed 552/552. Everyone else here failed 6/23 (binomial vs cluster p=0.82, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r3955005-n200569",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 24/43 FAILED here vs cluster 0.331. Owner u-49373354431 holds 75% of failures (18/19 here) and fails 617/2317 on other machines in the same window; array siblings elsewhere failed 582/582. Everyone else here failed 6/24 (binomial vs cluster p=0.86, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r3974592-n772143",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 51/96 FAILED here vs cluster 0.331. Owner u-49373354431 holds 69% of failures (35/44 here) and fails 600/2292 on other machines in the same window; array siblings elsewhere failed 571/571. Everyone else here failed 16/52 (binomial vs cluster p=0.69, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r414303-n303509",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 34/54 FAILED here vs cluster 0.331. Owner u-5770741873 holds 62% of failures (21/22 here) and fails 75/77 on other machines in the same window; array siblings elsewhere failed none. Everyone else here failed 13/32 (binomial vs cluster p=0.23, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r4605940-n772143",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 69/87 FAILED here vs cluster 0.331. Owner u-49373354431 holds 86% of failures (59/59 here) and fails 576/2277 on other machines in the same window; array siblings elsewhere failed 541/541. Everyone else here failed 10/28 (binomial vs cluster p=0.45, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r5179276-n772143",
+   "window": 8,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 43/70 FAILED here vs cluster 0.331. No single owner dominates (12 owners failing, top 37%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 33.0 vs 43 observed (Poisson p=0.05). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r5198790-n200569",
+   "window": 8,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 18/31 FAILED here vs cluster 0.331. 18 failures vs 11.4 expected from owners' own rates elsewhere (Poisson p=0.0438) -- more than the work explains, spread over 5 owners, 2 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r6727430-n772143",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 74/105 FAILED here vs cluster 0.331. Owner u-49373354431 holds 78% of failures (58/62 here) and fails 577/2274 on other machines in the same window; array siblings elsewhere failed 542/542. Everyone else here failed 16/43 (binomial vs cluster p=0.34, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r6959555-n200569",
+   "window": 8,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 31/54 FAILED here vs cluster 0.331. 31 failures vs 17.4 expected from owners' own rates elsewhere (Poisson p=0.002) -- more than the work explains, spread over 10 owners, 2 of whom fail here at 2x+ their own rate elsewhere -- but no exit-status signature or located node failure. Machine and workload can't be separated from this data.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r7141590-n750018",
+   "window": 8,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 41/68 FAILED here vs cluster 0.331. No single owner dominates (14 owners failing, top 37%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 34.1 vs 41 observed (Poisson p=0.14). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7317916-n772143",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 49/86 FAILED here vs cluster 0.331. Owner u-49373354431 holds 73% of failures (36/40 here) and fails 599/2296 on other machines in the same window; array siblings elsewhere failed 564/564. Everyone else here failed 13/46 (binomial vs cluster p=0.80, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7419443-n772143",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 38/63 FAILED here vs cluster 0.331. Owner u-49373354431 holds 79% of failures (30/30 here) and fails 605/2306 on other machines in the same window; array siblings elsewhere failed 570/570. Everyone else here failed 8/33 (binomial vs cluster p=0.90, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7753495-n303509",
+   "window": 8,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 28/54 FAILED here vs cluster 0.331. No single owner dominates (9 owners failing, top 29%). Using each owner's own FAILED rate on other machines in the same window (100% of jobs have a baseline), the expected count is 20.9 vs 28 observed (Poisson p=0.08). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r7753495-n772143",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 33/51 FAILED here vs cluster 0.331. Owner u-18816790499 holds 70% of failures (23/26 here) and fails 178/290 on other machines in the same window; array siblings elsewhere failed none. Everyone else here failed 10/25 (binomial vs cluster p=0.30, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r810901-n772143",
+   "window": 8,
+   "cause": "cannot_determine",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 70/89 FAILED here vs cluster 0.331. u-49373354431 dominates (80%), but everyone else here also failed 14/17 (p=0.000 vs cluster), so the machine is not cleared. No exit-status signature and no located node failure. Neither cause is ruled out.",
+   "verdict": "monitor"
+  },
+  {
+   "node": "r9170217-n772143",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 56/80 FAILED here vs cluster 0.331. Owner u-49373354431 holds 68% of failures (38/38 here) and fails 597/2298 on other machines in the same window; array siblings elsewhere failed 562/562. Everyone else here failed 18/42 (binomial vs cluster p=0.12, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9515777-n410412",
+   "window": 8,
+   "cause": "workload_mix",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 19/34 FAILED here vs cluster 0.331. No single owner dominates (7 owners failing, top 26%). Using each owner's own FAILED rate on other machines in the same window (94% of jobs have a baseline), the expected count is 14.6 vs 19 observed (Poisson p=0.16). The machine received failure-prone work; it is not failing it.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r9659953-n200569",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 35/47 FAILED here vs cluster 0.331. Owner u-49373354431 holds 69% of failures (24/24 here) and fails 611/2312 on other machines in the same window; array siblings elsewhere failed 576/576. Everyone else here failed 11/23 (binomial vs cluster p=0.10, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  },
+  {
+   "node": "r974863-n410412",
+   "window": 8,
+   "cause": "user_code",
+   "reasoning": "jobs.parquet+gpus.parquet, window 8 (14 d from first job, by time_end): 29/53 FAILED here vs cluster 0.331. Owner u-6782079612 holds 72% of failures (21/21 here) and fails 92/151 on other machines in the same window; array siblings elsewhere failed none. Everyone else here failed 8/32 (binomial vs cluster p=0.88, not elevated). The failures follow the person, not the machine.",
+   "verdict": "no_action"
+  }
+ ],
+ "card_imbalance_gpu_hours": {
+  "point": 13700,
+  "low": 11500,
+  "high": 19300,
+  "confidence": 0.6,
+  "basis": "Case 3, from gpus.parquet at one row per (job, card) -- invisible in jobs.parquet, which averages a job's cards, so a job with one card at 0% and one at 65% reads as an ordinary 33% job. Restricted to the 9,828 jobs holding 2+ cards, with each card's hours clipped to the job's walltime (that removes 1,725 bad card-hours). A card counts as idle only when another card in the same job was working at 20%+, so jobs where every card idled stay in the never-ran class and are not double counted. Point = card average under 5%, job longer than 1 hour (13,681 GPU-h). Low = the card's PEAK was 0%, i.e. it never ran a kernel at all (11,551). High = loosening 'the other card was working' to 10% and dropping the length filter (19,255). Applying rules::gpu-imbalance's own thresholds to this table reproduces its 689 findings and its 14,559 GPU-h exactly, which is our check on the method."
+ },
+ "card_imbalance_rationale": "gpus.parquet pivoted per gpu_id within each id_job; busiest card >= 20% SM, quietest < 5%, walltime > 1h. 10,883 of the 13,681 GPU-h are on 2-card jobs. 44 owners hold it and the top 10 hold 85%, so the remedy is about ten conversations rather than a cluster-wide policy. The risk is a multi-GPU job cancelled or failed before its data-parallel phase began: 4,753 GPU-h sit on cancelled jobs and 1,417 on failed ones, so we would only right-size an owner whose pattern repeats on jobs that completed.",
+ "card_imbalance_index_reasoning": "We checked WHICH card idles, expecting card 1 (code that only uses the default device). The data says the opposite: among single-node 2-card jobs with an imbalance, card 1 was the busy one in 885 jobs and card 0 in only 58. It is not one owner (39 owners show it) and not the scheduler (single-GPU jobs land on card 0 more often, 36,540 vs 28,481, and across all 2-card jobs card 1 is busier hour-weighted, 42.4% vs 34.9%). The idle card 0 holds a median 0.44 GiB at 37 W while the busy card holds 30.3 GiB -- the footprint of a framework initialising and then doing nothing there. Two explanations fit and this data cannot separate them: (a) the code targets a device other than 0, leaving a stray default context on card 0; (b) DCGM numbers cards in PCI-bus order while CUDA numbers them fastest-first unless CUDA_DEVICE_ORDER=PCI_BUS_ID is set, so the job's 'device 0' may be DCGM's card 1. The remedy is identical either way -- request one card -- but a detection rule that assumed 'card 1 idles' would miss nine of these jobs in ten.",
+ "incident_root_cause": "pvc/scratch-lustre-02",
+ "incident_action_scope": "single_resource",
+ "incident_nodes_to_drain": 0,
+ "incident_degraded_gpu_hours": {
+  "point": 8654,
+  "low": 7400,
+  "high": 11005,
+  "confidence": 0.6,
+  "basis": "Case 4. POST /v1/causal on any of the 121 filesystem-latency-degraded findings resolves them all to one shared volume (score 0.88, nodes 0.31), and every flagged node runs pods with a MOUNTS edge to it. Point = the findings' own impact, which we reproduced from real placements in gpus.parquet: each node's degraded hours are exactly the card-hours that ran on it in the 48 hours BEFORE detection (correlation 1.000, median difference 0.01h). That also dates the episode: 2026-03-08 09:00 to 2026-03-10 09:00 UTC. Low = the post-detection window reading (7,393). High = adding the 38 further machines whose pods mounted the same volume during the episode but carry no finding (11,005 total). These hours ran degraded; they were not lost."
+ },
+ "incident_confidence": 0.85,
+ "hardware_attributable_failures": 145,
+ "hardware_attributable_confidence": 0.6,
+ "hardware_attributable_rationale": "Case 5. 145 = 31 + 114, from two independent sources. (1) 31 jobs had an attempt killed by a machine death on ANY attempt (hit_node_failure), not the 10 whose final state reads NODE_FAIL -- filtering on the final state loses two thirds of the signal because requeued jobs end some other way, 6 of them successfully. (2) 114 SIGBUS crashes on r216287-n200569, a machine the scheduler never marked down. We found it with a test that does not depend on the scheduler: for every (machine, exit status) pair, count owners who crashed there 3+ times with that status and NEVER produced it on any other machine. Across all 225 machines exactly one pair passes -- status 135 (SIGBUS) with 3 owners, 86 + 23 + 5 crashes against 0 in their 946, 1,427 and 1,544 jobs elsewhere. 140 of the 144 jobs it ran in that window failed. LEFT OUT, deliberately: the other 26 failures on that machine in the window (statuses 1, 2, 130, 137 from 8 owners whose failure rates elsewhere are 16-69%, so they look like ordinary user failures); the 6 node failures that spanned 4-16 machines where the scheduler does not record which one died (blaming all of them would blame the innocent); and every one of the 113 node-elevated-failure-rate findings except the one our triage attributed to hardware -- 46 are user code, 40 are the mix of work the machine received, 26 cannot be determined. Low 124 (the 114 plus only the 10 final-state NODE_FAIL jobs); high 171 (all 140 failures in the silent machine's window plus the 31). 145 is 0.8% of the 18,587 FAILED jobs: attributing every failure to infrastructure would overstate what fixing hardware recovers by more than 100x.",
+ "notes": "Full working, case by case, is in ANALYSIS.md; the endpoint-by-endpoint API review is in API_ANALYSIS.md; every number is reproduced by a script in analysis/. Three things we would flag to a judge.\n\n1. WHAT NOT TO DO. GET /v1/recommendations proposes draining the 5 machines with the most findings for $57,226. We would not: it ranks by finding count and never reads rootCauses, and 15 of the 20 findings it cites have no rootCause at all. The array-task findings on those same machines resolve via POST /v1/causal to their Slurm array at score 1.0 with each machine at its thin share (0.05-0.4). Draining them removes 1,680 GPU-h of capacity a week (~$55K a quarter) and the failing scripts fail wherever they land next. The one machine that really did break ranks 21st by finding count.\n\n2. THE QUEUE IS A QUOTA PROBLEM, NOT A CAPACITY ONE. GET /v1/queue/latency monetises waiting at $9,330,307 -- 6.3x the entire GPU bill -- by pricing every job's wait_sec as staffed time; 23% of those hours are jobs held by their own dependencies and 53% of jobs are array tasks, so one person with 1,000 pending tasks is counted 1,000 times. Merged per person and counted only past a 4-hour target it is 3,719 person-hours. We then replayed all 74,838 startable jobs at 450 GPUs (analysis/sched_sim.py): adding each researcher's own concurrency quota takes the model from 1% to 27% of observed person-hours (40% of total waiting), and in 90% of waits over an hour the person was already at their cap while a median 287 of 450 GPUs sat free. An elastic quota (let a user exceed it below 70% cluster allocation, preemptibly) plus the 1-hour idle timeout removes 96% of the modelled waiting, ~$120K of researcher time, at no capacity cost. Reordering the queue (SJF, fair-share) adds nothing on top -- the scheduler is already near-FIFO with working backfill.\n\n3. THREE API BUGS WE HIT. POST /v1/neighbor caps its node set at 500 with no flag in the response (api/main.py:142) and applies the cap before edges are gathered, so hop_count=2 returns 500 nodes and 5 edges -- fewer than one hop. GET /v1/queue/latency is labelled kind=fact while monetising a judgement. POST /v1/causal builds its sentence from whichever finding you asked about, so the same storage incident reads 'rose 28.3x' or 'rose 45.5x', and its utilisation hop (-91.4%) is a constant in the code -- the real telemetry on those 121 machines shows 31.4% during the episode against 36.4% the week before.\n\nData caveat we hold to throughout: MIT publishes this as a four-month SAMPLE of the cluster's jobs and says it is not appropriate for estimating system utilisation, so every figure describes the sample. The storage incident is the corpus's one synthetic scenario; everything else is computed from real telemetry."
+}
