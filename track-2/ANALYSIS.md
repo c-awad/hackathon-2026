@@ -17,8 +17,8 @@ prepped data (`python3 analysis/<script>.py`).
 | 1 | Where the money goes | done (corrected in case 2) |
 | 2 | Recoverable spend, and whether CANCELLED is waste | done |
 | 2b | Which GPU jobs could run on CPU instead | done |
-| 3 | Card imbalance | next |
-| 4 | The shared-storage incident | |
+| 3 | Card imbalance | done |
+| 4 | The shared-storage incident | next |
 | 5 | Hardware-attributable failures | |
 | 6 | Node triage (113 elevated-failure-rate findings) | |
 | 7 | The API's "drain the top 5 nodes" recommendation | |
@@ -359,3 +359,124 @@ CPU offload is real but small: **$31K near-certain, up to $79K**. The larger lev
 for the same never-ran hours is idle sessions (T2, $164K), which is case 2's
 idle-kill. The dashboard should show both, with separate owners: placement defaults
 for the map-reduce and batch launchers, and an idle timeout for interactive sessions.
+
+---
+
+## Case 3 — Card imbalance
+
+Script: `analysis/case3_imbalance.py`
+
+**Question.** How many GPU-hours sit on idle cards inside multi-GPU jobs whose other
+cards are working, and why?
+
+### Method
+
+`jobs.parquet` averages across a job's cards, so a job with one card at 0% and one at
+65% reads as an ordinary 33% job. This case uses `gpus.parquet` (one row per card per
+job) instead, restricted to the **9,828 jobs with 2 or more cards**.
+
+- **Per-card hours** are `totalexecutiontime_sec` clipped to the job's wall time,
+  because some card rows report more runtime than their job had. Clipping removes
+  1,725 card-hours.
+- **A card counts as idle only if another card in the same job was working**
+  (busiest card at 20% or more). Jobs where every card idled are case 2's never-ran
+  jobs, and aren't counted again here.
+- **17 requeued multi-card jobs** may mix rows from different attempts. They are
+  left in, because they are too few to move the result.
+
+### The rule reproduces exactly
+
+Applying `rules::gpu-imbalance`'s condition (2+ cards, busiest ≥ 20%, spread > 30
+points, wall time > 1 h) to `gpus.parquet` gives **the same 689 jobs** as the
+finding, and the finding's `idle_gpu_hours` sum to **14,559**.
+
+### Idle-card hours under different definitions
+
+| Definition (all require another card ≥ 20%) | Cards | Jobs | GPU-h | $ |
+|---|---|---|---|---|
+| strict: card **peak** 0% (never ran a kernel) | 782 | 655 | 11,551 | $28,876 |
+| card average 0% | 883 | 755 | 13,482 | $33,705 |
+| card average < 5%, job > 1 h | 890 | 761 | 13,681 | $34,204 |
+| the rule: card > 30 points below busiest | 768 | 689 | 14,558 | $36,395 |
+| card average < 5%, busiest ≥ 10%, any length | | 1,632 | 19,255 | $48,138 |
+
+Also calculated: had each flagged card worked at its busiest sibling's rate, the
+shortfall is 9,198 GPU-h. That measures missing work rather than idle cards, so it
+isn't used for the claim.
+
+### The claim
+
+| | GPU-h | $ | Definition |
+|---|---|---|---|
+| **low** | 11,500 | $28,750 | card peak 0% |
+| **point** | 13,700 | $34,250 | card average < 5%, sibling ≥ 20%, job > 1 h |
+| **high** | 19,300 | $48,250 | card average < 5%, sibling ≥ 10%, any length |
+
+The low and point ends barely move with the definition. The high end loosens "the
+other card was working" to 10%, which starts to overlap case 2's near-idle class B.
+
+### Where it sits
+
+- **By width:** 10,883 of the 13,681 GPU-h are on **2-card jobs**. Then 1,569 on
+  4-card, 670 on 8-card and 494 on 32-card jobs.
+- **By outcome:** 6,840 completed, 4,753 cancelled, 1,417 failed, 672 timed out.
+  Completed jobs are the clean case: the work finished on the cards it used.
+- **By job type:** batch 8,132, other 4,404, interactive 1,146. Only 7% are array
+  tasks.
+- **By owner:** 44 owners, and **the top 10 hold 85%**. This is about ten
+  conversations, not a policy. No owner with 10 or more multi-card jobs is
+  imbalanced on 80% of them, so it is a habit of particular workflows, not of whole
+  teams.
+- **Multi-node:** of 253 multi-node jobs with a working card, none had "one idle card
+  on every node". 74 had whole nodes idle while others worked. That is a different
+  failure: wasted nodes, not wasted cards.
+
+### Which card idles, and why (`card_imbalance_index_reasoning`)
+
+The obvious guess is code that only uses the default device, `cuda:0`. That would
+leave **card 1** idle. **The data shows the opposite.** On single-node 2-card jobs
+with an imbalance:
+
+| | Jobs |
+|---|---|
+| card 1 busy, card 0 idle | **885** |
+| card 0 busy, card 1 idle | 58 |
+
+- **It isn't one owner.** 39 owners have a card-1-busy job and 15 have a
+  card-0-busy job. One owner accounts for 504 of the card-1-busy jobs, but the
+  pattern is widespread without them too.
+- **It isn't the scheduler.** Single-GPU jobs land on card 0 *more* often (36,540
+  against 28,481), and across all 2-card jobs, hour-weighted, card 1 is busier (42.4%
+  against 34.9%).
+- **The idle card 0 isn't empty.** Its median peak GPU memory is **0.44 GiB** at
+  37 W, while the busy card 1 holds a median of 30.3 GiB. 0.44 GiB is the size of a
+  GPU framework's context: something initialized the GPU on card 0 and then did all
+  its work on card 1.
+
+**Two explanations fit, and the data can't separate them:**
+
+1. **A stray context.** The code targets one device other than 0, for example a
+   hard-coded `cuda:1` or one process per rank where only rank 1 does work. The
+   framework still opens a default context on device 0 at startup.
+2. **Index mismatch.** DCGM numbers cards in PCI-bus order, while CUDA numbers them
+   fastest-first unless `CUDA_DEVICE_ORDER=PCI_BUS_ID` is set. The job's "device 0"
+   could be DCGM's card 1.
+
+**Either way, the remedy is the same:** these jobs use one card, so they should
+request one. The index pattern tells the SRE what to look for in the job scripts,
+and it is why a rule that assumed "card 1 idles" would miss nine in ten of these
+jobs.
+
+### Cost of being wrong
+
+- **Right-sizing to 1 GPU is safe for the job's compute:** the idle card did nothing
+  and holds 0.44 GiB. The job might still need the second card's **memory** at
+  startup, but the data shows it didn't use it.
+- **The risk is a job that is imbalanced only in this run.** For example, a
+  multi-GPU training job that failed or was cancelled before its data-parallel phase
+  began, so only one card ever ran. 4,753 of the hours are on cancelled jobs, and
+  1,417 on failed ones. Right-size an owner's jobs only when the pattern repeats and
+  the imbalanced runs completed.
+- **The stakes are small.** At $28K–$48K this is the smallest lever so far. It's
+  worth a tile because it is **invisible in `jobs.parquet`**, which is the table most
+  dashboards will read.
