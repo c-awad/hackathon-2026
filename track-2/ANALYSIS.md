@@ -30,6 +30,11 @@ prepped data (`python3 analysis/<script>.py`).
   have been caught six days earlier for about $700 of capacity. See case 5.
 - **CANCELLED is not waste in itself.** Count only the idle time before the
   cancel. See case 2.
+- **Do not reorder the queue to cut waiting.** The scheduler is already
+  near-FIFO with working backfill, and 90% of long waits happen while the
+  *same user* is at a per-user concurrency cap (16 / 32 / 65 GPUs) with a median
+  of **287 of 450 GPUs free**. The fix is elastic caps and the idle timeout, not
+  a different order. See case 9.
 
 | # | Case | Status |
 |---|---|---|
@@ -42,6 +47,7 @@ prepped data (`python3 analysis/<script>.py`).
 | 6 | Node triage (113 elevated-failure-rate findings) | done |
 | 7 | The API's "drain the top 5 nodes" recommendation | done |
 | 8 | The queue tail, priced in engineer-hours | done |
+| 9 | Is the scheduler optimized? Would reordering help? | done |
 
 ---
 
@@ -1109,3 +1115,121 @@ lower bound, so read the timeline as a shape, not a measured level.
 > idle-but-allocated GPUs could have served most of it. Reclaim those first and a
 > 20% cut shouldn't slow anyone down. The API's "$9.3M of waiting" counts one
 > person with 14,000 tiny tasks as 14,000 people.
+
+---
+
+## Case 9 — Is the scheduler optimized, and would reordering cut the cost?
+
+Script: `analysis/case9_scheduler.py`. Output: `analysis/out_case9_scheduler.csv`.
+
+**Question.** The API prices queue waiting at $9.33M. Is the scheduler doing a bad
+job, and would reordering the queue recover any of it?
+
+**Answer: no, and no.** The scheduler is close to optimal for the order it is given.
+The waiting is caused by **per-user concurrency caps binding while the cluster is
+two-thirds empty**. Reordering cannot fix that; raising the caps and killing idle
+allocations can.
+
+### First: the scheduler is already doing the right things
+
+- **It is FIFO.** Rank correlation between eligible order and start order is
+  **0.9966**.
+- **Backfill works.** Small jobs are not stuck behind big ones: median wait is
+  12 s for 1-GPU jobs, 1 s for 2-GPU, 1 s for 3-8 GPU jobs. In simulation,
+  removing backfill makes waiting **26% worse** and quadruples the jobs that
+  breach 4 hours (6 → 17).
+- **Nothing suggests a misconfigured priority.** `priority` correlates with wait
+  at **-0.019**, `gpu_count` at 0.024, `dur` at 0.079. No dimension of the job
+  predicts its wait, which is what you expect when a quota, not the queue, is the
+  constraint.
+
+### Then: replaying the stream under other policies
+
+A discrete-event simulator at 450 GPUs, fed the real eligible times, GPU counts and
+runtimes, with a 400-job backfill window. Person-hours merge each owner's
+overlapping waits, as in case 8.
+
+| Policy | Total wait (h) | p95 | p99 | Jobs > 4 h | Person-hours |
+|---|---|---|---|---|---|
+| **OBSERVED (real)** | **75,334** | 4.64 h | 14.82 h | 4,181 | 23,212 |
+| FCFS, no backfill | 4,484 | 0.19 h | 1.24 h | 17 | 85 |
+| **FCFS + backfill** (≈ the real scheduler) | 4,099 | 0.19 h | 1.18 h | 6 | 67 |
+| SJF (oracle runtime) | 3,307 | 0.16 h | 0.93 h | 1 | 52 |
+| Smallest-first (GPUs) | 4,012 | 0.19 h | 1.15 h | 1 | 62 |
+| Fair-share round robin | 3,967 | 0.19 h | 1.18 h | 1 | 47 |
+| FCFS + 1 h idle-kill | 3,031 | 0.18 h | 0.79 h | 0 | 24 |
+| **SJF + 1 h idle-kill** | **2,607** | 0.14 h | 0.70 h | 0 | 20 |
+
+Relative to the FCFS-with-backfill baseline: SJF **-22%** person-hours, fair-share
+round robin **-30%**, smallest-first **-7%**, and the **idle timeout -64%** on its
+own — **-70%** combined with SJF.
+
+**Two caveats that matter more than the ranking.**
+
+1. **The simulator's absolute waits are ~18× below the observed ones** (4,099 h
+   against 75,334 h). These jobs cannot fill 450 GPUs; the sample excludes the rest
+   of the cluster's work. So the table shows *ordering effects*, never savings.
+2. **SJF is given each job's true runtime**, which no scheduler knows in advance. It
+   would have to use the requested limit, and **42% of these jobs request no limit
+   at all**. SJF here is an upper bound on what reordering could ever buy.
+
+**Even at face value, reordering is worth tens of person-hours in this sample, not
+millions of dollars.** The $9.33M is a pricing artefact (case 8), not a scheduler
+bug.
+
+### The real cause: per-user caps, not capacity or order
+
+Sampling 1,200 jobs that waited more than an hour, and asking what was running at
+the moment each became eligible:
+
+| At the moment a job began waiting > 1 h | Median | 90th pct |
+|---|---|---|
+| GPUs the **same user** already held | **16** | 50 |
+| Jobs the same user already had running | 16 | 50 |
+| GPUs held **cluster-wide** (of 450) | 163 | 312 |
+
+- **90% of long waits happen while that user already holds 10+ GPUs.**
+- **The cluster was never above 380 of 450**, and above 300 only 16% of the time.
+- **Median free capacity when someone waited over an hour: 287 of 450 GPUs (64%
+  idle).**
+- The per-user numbers are **quantized**: among the 93 users with 50+ jobs, peak
+  concurrency clusters at **16 / 17** (28 users), **32** (9 users) and a few at
+  **65-66**. Those are quota ceilings, not coincidences. The eight users who did
+  most of the waiting all sit at 31, 32, 65 or 66.
+
+**So the queue is not full — the users are capped.** A researcher submits 200 array
+tasks, 16 run, and the other 184 wait for their own jobs to finish while hundreds
+of cards sit free.
+
+### What would actually cut the waiting
+
+1. **Make the per-user cap elastic.** Let a user exceed their cap when the cluster
+   is below, say, 70% allocated, with those jobs marked preemptible so the quota
+   still holds when demand returns. This targets the 90% of long waits that are
+   self-inflicted queueing, and it costs no capacity: the cards are already idle.
+2. **The idle timeout from tile 2 — the same action, twice paid.** It returns
+   $205K of GPU time *and* is the single biggest queue improvement in simulation
+   (-64% person-hours), because an idle job holds both a card and a slot against
+   its owner's quota. Killing it frees the owner's own queue.
+3. **Reserve for wide jobs, but expect little.** Only **13 jobs** waited more than
+   24 hours; all were 16-GPU jobs from **2 owners**, and the cluster held a median
+   of 264 of 450 GPUs when they began waiting — so even these were not capacity, and
+   the 9+ GPU p99 of 192 hours is 13 jobs, not a class of work.
+4. **Ask people for honest time limits.** Jobs requesting no limit hold half of all
+   queue time. Backfill can only place a job whose limit fits the gap, so an honest
+   limit is free throughput — and `rules::timelimit-overreservation` already
+   identifies the 41 worst offenders.
+
+### Caveat on the free-capacity figure
+
+"287 of 450 free" counts only jobs in this sample. The real machine also ran
+CPU-only and non-sampled work, so true free capacity was lower. **The cap evidence
+does not depend on it**: the quantization at 16 / 32 / 65 is visible in the users'
+own concurrency, whatever else the cluster was doing.
+
+### Candidate CFO line
+
+> Researchers are not waiting for hardware. They are waiting for their own quota:
+> in 90% of long waits the person was already at their cap while ~287 of 450 GPUs
+> sat free. Reordering the queue buys nothing; relaxing the cap when the cluster is
+> quiet, and reclaiming idle allocations, removes almost all of it.

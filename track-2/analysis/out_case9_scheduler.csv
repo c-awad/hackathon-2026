@@ -1,0 +1,9 @@
+policy,total_wait_h,mean_s,p95_h,p99_h,max_h,jobs_over_4h,hours_past_target,person_hours
+OBSERVED (real waits),75333.71,3623.85,4.64,14.82,292.0,4181,32643.8,23212.29
+"FCFS, no backfill",4484.01,215.7,0.19,1.24,4.1,17,1.11,84.77
+FCFS + backfill,4098.75,197.17,0.19,1.18,4.08,6,0.4,67.06
+SJF (oracle runtime),3307.42,159.1,0.16,0.93,5.02,1,1.02,52.03
+Smallest-first (GPUs),4012.28,193.01,0.19,1.15,5.02,1,1.02,62.44
+Fair-share round robin,3967.49,190.85,0.19,1.18,5.02,1,1.02,47.07
+FCFS + 1h idle-kill,3031.4,145.82,0.18,0.79,3.97,0,0.0,23.96
+SJF + 1h idle-kill,2607.07,125.41,0.14,0.7,3.97,0,0.0,19.85
